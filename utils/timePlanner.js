@@ -1,41 +1,33 @@
 function distributeConcepts(concepts, weeks) {
+  const phaseOrder = [
+    "Foundations",
+    "Linear Data Structures",
+    "Hashing & Heaps",
+    "Trees",
+    "Graphs"
+  ];
 
-  const totalTime = concepts.reduce(
-    (sum, c) => sum + (c.study_time || 10),
-    0
-  );
+  const phaseMap = {};
+  phaseOrder.forEach(p => phaseMap[p] = []);
 
-  const targetPerWeek = totalTime / weeks;
-
-  const roadmap = [];
-  let currentWeek = 0;
-  let currentTime = 0;
-
-  roadmap.push({
-    week: 1,
-    concepts: []
+  concepts.forEach(c => {
+    phaseMap[c.phase].push(c);
   });
 
-  for (const concept of concepts) {
+  const plan = [];
+  let week = 1;
 
-    if (currentTime >= targetPerWeek && currentWeek < weeks - 1) {
-
-      currentWeek++;
-      currentTime = 0;
-
-      roadmap.push({
-        week: currentWeek + 1,
-        concepts: []
+  for (let phase of phaseOrder) {
+    if (phaseMap[phase].length > 0) {
+      plan.push({
+        week: week++,
+        phase: phase,
+        concepts: phaseMap[phase]
       });
-
     }
-
-    roadmap[currentWeek].concepts.push(concept);
-    currentTime += concept.study_time || 10;
-
   }
 
-  return roadmap;
+  return plan;
 }
 
 module.exports = { distributeConcepts };

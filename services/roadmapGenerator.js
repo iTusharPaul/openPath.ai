@@ -1,83 +1,195 @@
 const pool = require("../db/db");
 const { distributeConcepts } = require("../utils/timePlanner");
 
-async function generateRoadmap(userInput) {
+// Map level → Phase
+function getPhase(level) {
+  if (level == 1) return "Foundations";
+  if (level == 2) return "Linear Data Structures";
+  if (level == 3) return "Hashing & Heaps";
+  if (level == 4) return "Trees";
+  if (level == 5) return "Graphs";
+  return "Other";
+}
 
+async function generateRoadmap(userInput) {
   const {
     concept_id,
     duration_weeks,
-    language
+    language,
+    experience_level,
+    accepted_concepts
   } = userInput;
 
-  // STEP 1: Recursive tree with proper ordering (DFS)
+  // ----------------------------------
+  // STEP 1 — Suggest concept_prerequisites (only first request)
+  // ----------------------------------
+  if (accepted_concepts === undefined && experience_level === "beginner") {
+    const prereqQuery = `
+      WITH RECURSIVE prereqs AS (
+        SELECT prerequisite_id
+        FROM concept_prerequisites
+        WHERE concept_id = $1
 
-  const conceptTreeQuery = `
-    WITH RECURSIVE concept_tree AS (
-      SELECT 
-        id,
-        name,
-        level,
-        parent_id,
-        ARRAY[id] AS path
-      FROM concepts
-      WHERE id = $1
+        UNION
 
-      UNION ALL
-
-      SELECT 
-        c.id,
-        c.name,
-        c.level,
-        c.parent_id,
-        ct.path || c.id
+        SELECT p.prerequisite_id
+        FROM concept_prerequisites p
+        JOIN prereqs pr ON pr.prerequisite_id = p.concept_id
+      )
+      SELECT c.id, c.name, c.level
       FROM concepts c
-      JOIN concept_tree ct ON c.parent_id = ct.id
-    )
+      WHERE c.id IN (SELECT prerequisite_id FROM prereqs)
+      ORDER BY c.level ASC;
+    `;
 
-    SELECT
-      ct.id,
-      ct.name,
-      ct.level,
-      ct.path,
-      COALESCE(SUM(cc.read_time), 10) AS total_time
-    FROM concept_tree ct
-    LEFT JOIN content_chunks cc
-    ON cc.concept_id = ct.id
-    GROUP BY ct.id, ct.name, ct.level, ct.path
-    ORDER BY ct.path;  -- 🔥 THIS FIXES ORDER
+    const result = await pool.query(prereqQuery, [concept_id]);
+
+    if (result.rows.length > 0) {
+      return {
+        needs_suggestions: true,
+        suggestions: result.rows
+      };
+    }
+  }
+
+  // ----------------------------------
+  // STEP 2 — Decide final concept list
+  // ----------------------------------
+  let finalConceptIds = [];
+
+  if (accepted_concepts && accepted_concepts.length > 0) {
+    // User ACCEPTED suggestions
+    finalConceptIds = [...accepted_concepts, concept_id];
+  } else if (accepted_concepts && accepted_concepts.length === 0) {
+    // User REJECTED suggestions
+    finalConceptIds = [concept_id];
+  } else {
+    // Intermediate / advanced user
+    finalConceptIds = [concept_id];
+  }
+
+  // ----------------------------------
+  // STEP 3 — Fetch concepts
+  // ----------------------------------
+  let concepts;
+
+  if (accepted_concepts && accepted_concepts.length > 0) {
+    // Fetch concept_prerequisites + concepts recursively
+    const allConceptsQuery = `
+      WITH RECURSIVE all_nodes AS (
+        SELECT id, name, level
+        FROM concepts
+        WHERE id = ANY($1::int[])
+
+        UNION
+
+        SELECT c.id, c.name, c.level
+        FROM concepts c
+        JOIN concept_prerequisites p ON c.id = p.prerequisite_id
+        JOIN all_nodes an ON an.id = p.concept_id
+      )
+      SELECT DISTINCT id, name, level
+      FROM all_nodes;
+    `;
+
+    const conceptsResult = await pool.query(allConceptsQuery, [finalConceptIds]);
+    concepts = conceptsResult.rows;
+  } else {
+    // Only selected concept
+    const conceptsResult = await pool.query(
+      `SELECT id, name, level FROM concepts WHERE id = $1`,
+      [concept_id]
+    );
+    concepts = conceptsResult.rows;
+  }
+
+  const conceptIds = concepts.map(c => c.id);
+
+  // ----------------------------------
+  // STEP 4 — Get edges for topo sort
+  // ----------------------------------
+  const edgesQuery = `
+    SELECT concept_id, prerequisite_id
+    FROM concept_prerequisites
+    WHERE concept_id = ANY($1::int[]);
   `;
 
-  const conceptResult = await pool.query(
-    conceptTreeQuery,
-    [concept_id]
-  );
+  const edgesResult = await pool.query(edgesQuery, [conceptIds]);
+  const edges = edgesResult.rows;
 
-  const concepts = conceptResult.rows;
+  // ----------------------------------
+  // STEP 5 — Topological Sort
+  // ----------------------------------
+  const graph = {};
+  const indegree = {};
 
+  concepts.forEach(c => {
+    graph[c.id] = [];
+    indegree[c.id] = 0;
+  });
+
+  edges.forEach(e => {
+    if (graph[e.prerequisite_id]) {
+      graph[e.prerequisite_id].push(e.concept_id);
+      indegree[e.concept_id]++;
+    }
+  });
+
+  const queue = [];
+  for (let node in indegree) {
+    if (indegree[node] == 0) queue.push(parseInt(node));
+  }
+
+  const topoOrder = [];
+  while (queue.length) {
+    const node = queue.shift();
+    topoOrder.push(node);
+
+    for (let neighbor of graph[node] || []) {
+      indegree[neighbor]--;
+      if (indegree[neighbor] == 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  // ----------------------------------
+  // STEP 6 — Sort by Level + Topo Order
+  // ----------------------------------
+  const topoIndex = {};
+  topoOrder.forEach((id, index) => {
+    topoIndex[id] = index;
+  });
+
+  concepts.sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level;
+    return (topoIndex[a.id] || 0) - (topoIndex[b.id] || 0);
+  });
+
+  // ----------------------------------
+  // STEP 7 — Force target concept last
+  // ----------------------------------
+  const targetIndex = concepts.findIndex(c => c.id == concept_id);
+  if (targetIndex !== -1) {
+    const [targetConcept] = concepts.splice(targetIndex, 1);
+    concepts.push(targetConcept);
+  }
+
+  // ----------------------------------
+  // STEP 8 — Fetch explanation + resources
+  // ----------------------------------
   const roadmapConcepts = [];
 
-  // STEP 2: Fetch explanation + resources
-
   for (const concept of concepts) {
-
-    // Explanation
-
     const chunkQuery = `
       SELECT chunk_text, heading
       FROM content_chunks
       WHERE concept_id = $1
-      ORDER BY read_time DESC
       LIMIT 1
     `;
 
-    const chunkResult = await pool.query(
-      chunkQuery,
-      [concept.id]
-    );
-
+    const chunkResult = await pool.query(chunkQuery, [concept.id]);
     const explanation = chunkResult.rows[0] || null;
-
-    // Resources
 
     const resourceQuery = `
       SELECT url, content_type
@@ -88,35 +200,35 @@ async function generateRoadmap(userInput) {
       LIMIT 3
     `;
 
-    const resources = await pool.query(
-      resourceQuery,
-      [concept.id, language]
-    );
+    const resources = await pool.query(resourceQuery, [
+      concept.id,
+      language
+    ]);
 
     roadmapConcepts.push({
       concept_id: concept.id,
       concept: concept.name,
-      study_time: Number(concept.total_time) || 10,
-      explanation: explanation,
-      resources: resources.rows
+      level: concept.level,
+      phase: getPhase(concept.level),
+      explanation,
+      resources: resources.rows,
+      study_time: 60
     });
-
   }
 
-  // STEP 3: Distribute while preserving order
-
+  // ----------------------------------
+  // STEP 9 — Distribute into weeks
+  // ----------------------------------
   const weeklyPlan = distributeConcepts(
     roadmapConcepts,
     duration_weeks
   );
 
   return {
-    concept_id,
-    duration_weeks,
+    needs_suggestions: false,
     total_concepts: roadmapConcepts.length,
     roadmap: weeklyPlan
   };
-
 }
 
 module.exports = { generateRoadmap };
