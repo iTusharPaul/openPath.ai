@@ -175,46 +175,52 @@ async function generateRoadmap(userInput) {
     concepts.push(targetConcept);
   }
 
-  // ----------------------------------
-  // STEP 8 — Fetch explanation + resources
-  // ----------------------------------
-  const roadmapConcepts = [];
+// ----------------------------------
+// STEP 8 — Fetch explanation + resources
+// ----------------------------------
+const roadmapConcepts = [];
 
-  for (const concept of concepts) {
-    const chunkQuery = `
-      SELECT chunk_text, heading
-      FROM content_chunks
-      WHERE concept_id = $1
-      LIMIT 1
-    `;
+for (const concept of concepts) {
+  // Fetch AI generated content from concepts table
+  const conceptContentQuery = `
+    SELECT explanation, example, key_points
+    FROM concepts
+    WHERE id = $1
+  `;
 
-    const chunkResult = await pool.query(chunkQuery, [concept.id]);
-    const explanation = chunkResult.rows[0] || null;
+  const conceptContentResult = await pool.query(conceptContentQuery, [concept.id]);
+  const conceptContent = conceptContentResult.rows[0] || {};
 
-    const resourceQuery = `
-      SELECT url, content_type
-      FROM resources
-      WHERE concept_id = $1
-      AND (implementation_language = $2 OR implementation_language = 'general')
-      ORDER BY authority_score DESC
-      LIMIT 3
-    `;
+  const explanation = {
+    explanation: conceptContent.explanation || null,
+    example: conceptContent.example || null,
+    key_points: conceptContent.key_points || []
+  };
 
-    const resources = await pool.query(resourceQuery, [
-      concept.id,
-      language
-    ]);
+  const resourceQuery = `
+    SELECT url, content_type
+    FROM resources
+    WHERE concept_id = $1
+    AND (implementation_language = $2 OR implementation_language = 'general')
+    ORDER BY authority_score DESC
+    LIMIT 3
+  `;
 
-    roadmapConcepts.push({
-      concept_id: concept.id,
-      concept: concept.name,
-      level: concept.level,
-      phase: getPhase(concept.level),
-      explanation,
-      resources: resources.rows,
-      study_time: 60
-    });
-  }
+  const resources = await pool.query(resourceQuery, [
+    concept.id,
+    language
+  ]);
+
+  roadmapConcepts.push({
+    concept_id: concept.id,
+    concept: concept.name,
+    level: concept.level,
+    phase: getPhase(concept.level),
+    explanation,
+    resources: resources.rows,
+    study_time: 60
+  });
+}
 
   // ----------------------------------
   // STEP 9 — Distribute into weeks
