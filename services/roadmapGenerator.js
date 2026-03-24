@@ -1,5 +1,5 @@
 const pool = require("../db/db");
-const { distributeConcepts } = require("../utils/timePlanner");
+const { calculateLWTA, distributeConcepts } = require("../utils/timePlanner");
 
 // Map level → Phase
 function getPhase(level) {
@@ -21,7 +21,7 @@ async function generateRoadmap(userInput) {
   } = userInput;
 
   // ----------------------------------
-  // STEP 1 — Suggest concept_prerequisites (only first request)
+  // STEP 1 — Suggest prerequisites (only for beginner)
   // ----------------------------------
   if (accepted_concepts === undefined && experience_level === "beginner") {
     const prereqQuery = `
@@ -53,51 +53,46 @@ async function generateRoadmap(userInput) {
   }
 
   // ----------------------------------
-  // STEP 2 — Decide final concept list
+  // STEP 2 — Final concept list
   // ----------------------------------
   let finalConceptIds = [];
 
   if (accepted_concepts && accepted_concepts.length > 0) {
-    // User ACCEPTED suggestions
     finalConceptIds = [...accepted_concepts, concept_id];
   } else if (accepted_concepts && accepted_concepts.length === 0) {
-    // User REJECTED suggestions
     finalConceptIds = [concept_id];
   } else {
-    // Intermediate / advanced user
     finalConceptIds = [concept_id];
   }
 
   // ----------------------------------
-  // STEP 3 — Fetch concepts
+  // STEP 3 — Fetch concepts + SLI
   // ----------------------------------
   let concepts;
 
   if (accepted_concepts && accepted_concepts.length > 0) {
-    // Fetch concept_prerequisites + concepts recursively
     const allConceptsQuery = `
       WITH RECURSIVE all_nodes AS (
-        SELECT id, name, level
+        SELECT id, name, level, out_degree_count
         FROM concepts
         WHERE id = ANY($1::int[])
 
         UNION
 
-        SELECT c.id, c.name, c.level
+        SELECT c.id, c.name, c.level, c.out_degree_count
         FROM concepts c
         JOIN concept_prerequisites p ON c.id = p.prerequisite_id
         JOIN all_nodes an ON an.id = p.concept_id
       )
-      SELECT DISTINCT id, name, level
+      SELECT DISTINCT id, name, level, out_degree_count
       FROM all_nodes;
     `;
 
     const conceptsResult = await pool.query(allConceptsQuery, [finalConceptIds]);
     concepts = conceptsResult.rows;
   } else {
-    // Only selected concept
     const conceptsResult = await pool.query(
-      `SELECT id, name, level FROM concepts WHERE id = $1`,
+      `SELECT id, name, level, out_degree_count FROM concepts WHERE id = $1`,
       [concept_id]
     );
     concepts = conceptsResult.rows;
@@ -153,9 +148,6 @@ async function generateRoadmap(userInput) {
     }
   }
 
-  // ----------------------------------
-  // STEP 6 — Sort by Level + Topo Order
-  // ----------------------------------
   const topoIndex = {};
   topoOrder.forEach((id, index) => {
     topoIndex[id] = index;
@@ -167,7 +159,7 @@ async function generateRoadmap(userInput) {
   });
 
   // ----------------------------------
-  // STEP 7 — Force target concept last
+  // STEP 6 — Force target concept last
   // ----------------------------------
   const targetIndex = concepts.findIndex(c => c.id == concept_id);
   if (targetIndex !== -1) {
@@ -175,52 +167,62 @@ async function generateRoadmap(userInput) {
     concepts.push(targetConcept);
   }
 
-// ----------------------------------
-// STEP 8 — Fetch explanation + resources
-// ----------------------------------
-const roadmapConcepts = [];
+  // ----------------------------------
+  // STEP 7 — LWTA Time Allocation
+  // ----------------------------------
+  concepts = calculateLWTA(
+  concepts,
+  experience_level,
+  userInput.daily_hours,
+  userInput.days_per_week,
+  duration_weeks
+);
+  // ----------------------------------
+  // STEP 8 — Fetch explanation + resources
+  // ----------------------------------
+  const roadmapConcepts = [];
 
-for (const concept of concepts) {
-  // Fetch AI generated content from concepts table
-  const conceptContentQuery = `
-    SELECT explanation, example, key_points
-    FROM concepts
-    WHERE id = $1
-  `;
+  for (const concept of concepts) {
+    const conceptContentQuery = `
+      SELECT explanation, example, key_points
+      FROM concepts
+      WHERE id = $1
+    `;
 
-  const conceptContentResult = await pool.query(conceptContentQuery, [concept.id]);
-  const conceptContent = conceptContentResult.rows[0] || {};
+    const conceptContentResult = await pool.query(conceptContentQuery, [concept.id]);
+    const conceptContent = conceptContentResult.rows[0] || {};
 
-  const explanation = {
-    explanation: conceptContent.explanation || null,
-    example: conceptContent.example || null,
-    key_points: conceptContent.key_points || []
-  };
+    const explanation = {
+      explanation: conceptContent.explanation || null,
+      example: conceptContent.example || null,
+      key_points: conceptContent.key_points || []
+    };
 
-  const resourceQuery = `
-    SELECT url, content_type
-    FROM resources
-    WHERE concept_id = $1
-    AND (implementation_language = $2 OR implementation_language = 'general')
-    ORDER BY authority_score DESC
-    LIMIT 3
-  `;
+    const resourceQuery = `
+      SELECT url, content_type
+      FROM resources
+      WHERE concept_id = $1
+      AND (implementation_language = $2 OR implementation_language = 'general')
+      ORDER BY authority_score DESC
+      LIMIT 3
+    `;
 
-  const resources = await pool.query(resourceQuery, [
-    concept.id,
-    language
-  ]);
+    const resources = await pool.query(resourceQuery, [
+      concept.id,
+      language
+    ]);
 
-  roadmapConcepts.push({
-    concept_id: concept.id,
-    concept: concept.name,
-    level: concept.level,
-    phase: getPhase(concept.level),
-    explanation,
-    resources: resources.rows,
-    study_time: 60
-  });
-}
+    roadmapConcepts.push({
+      concept_id: concept.id,
+      concept: concept.name,
+      level: concept.level,
+      phase: getPhase(concept.level),
+      explanation,
+      resources: resources.rows,
+      study_time: concept.study_time,
+      buffer_time: concept.buffer_time
+    });
+  }
 
   // ----------------------------------
   // STEP 9 — Distribute into weeks
