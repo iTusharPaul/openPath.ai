@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Learning Roadmap Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <main class="container">
+      <header class="page-header">
+        <h1>Learning Roadmap Generator</h1>
+        <p class="subhead">Enter your goal and constraints; get a personalized plan.</p>
+      </header>
+
+      <section class="card" aria-label="Inputs">
+        <div class="card-header">
+          <h2>Inputs</h2>
+        </div>
+
+        <form id="roadmap-form" class="form">
+          <div class="grid">
+            <div class="field">
+              <label for="concept_id">Target Concept ID</label>
+              <input id="concept_id" name="concept_id" placeholder="e.g., 42" inputmode="numeric" required />
+            </div>
+
+            <div class="field">
+              <label for="experience_level">Experience Level</label>
+              <select id="experience_level" name="experience_level" required>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate" selected>Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="language">Implementation language</label>
+              <input id="language" name="language" placeholder="e.g., javascript, python" />
+            </div>
+
+            <div class="field">
+              <label for="duration_weeks">Duration (weeks)</label>
+              <input
+                id="duration_weeks"
+                name="duration_weeks"
+                type="number"
+                min="1"
+                step="1"
+                value="6"
+                required
+              />
+            </div>
+
+            <div class="field">
+              <label for="daily_hours">Daily Hours</label>
+              <input id="daily_hours" name="daily_hours" type="number" min="0.5" step="0.5" value="2" required />
+            </div>
+
+            <div class="field">
+              <label for="days_per_week">Days / Week</label>
+              <input id="days_per_week" name="days_per_week" type="number" min="1" max="7" step="1" value="5" required />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="generate-btn" type="submit" class="btn btn-primary">Generate Roadmap</button>
+            <div id="status" class="status" role="status" aria-live="polite"></div>
+          </div>
+        </form>
+      </section>
+
+      <section id="suggestions-section" class="card hidden" aria-label="Suggested Prerequisites">
+        <div class="card-header">
+          <h2>Suggested Prerequisites</h2>
+          <p class="card-subhead">Select prerequisites you are willing to include, then continue.</p>
+        </div>
+
+        <div id="suggestions-list" class="suggestions"></div>
+
+        <div class="actions actions-split">
+          <button id="generate-selected" class="btn btn-primary">Generate with Selected</button>
+          <button id="skip-continue" class="btn btn-secondary">Skip and Continue</button>
+        </div>
+      </section>
+
+      <section id="roadmap-section" class="card hidden" aria-label="Generated Roadmap">
+        <div class="card-header row-between">
+          <div>
+            <h2>Generated Roadmap</h2>
+          </div>
+          <div id="concept-count" class="pill">0 concepts</div>
+        </div>
+
+        <div id="roadmap" class="roadmap"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+
