@@ -82,28 +82,46 @@ function calculateWeights(concepts, experience_level) {
 function allocateTime(concepts, totalMinutes) {
   const totalWeight = concepts.reduce((sum, c) => sum + c.weight, 0) || 1;
 
-  concepts.forEach(c => {
-    c.base_time = totalMinutes * (c.weight / totalWeight);
-  });
-
+  // 1. Calculate Averages FIRST for Cognitive Load Comparison
   const avgICF = concepts.reduce((s, c) => s + c.icf, 0) / concepts.length;
   const avgOut = concepts.reduce((s, c) => s + (c.out_degree_count || 0), 0) / concepts.length;
   const avgGL = concepts.reduce((s, c) => s + (c.glossary_load || 0), 0) / concepts.length;
 
   concepts.forEach(c => {
-    let buffer = 0;
+    // 2. TOP-DOWN ALLOCATION: Set the absolute hard ceiling for this concept
+    const exactTotalTime = totalMinutes * (c.weight / totalWeight);
 
-    if (c.icf > avgICF) buffer += 0.20 * c.base_time;
-    if ((c.out_degree_count || 0) > avgOut) buffer += 0.15 * c.base_time;
-    if ((c.glossary_load || 0) > avgGL) buffer += 0.10 * c.base_time;
+    // 3. INTERNAL SPLIT: Determine the buffer ratio based on your cognitive logic
+    let bufferRatio = 0;
+    
+    if (c.icf > avgICF) bufferRatio += 0.20;
+    if ((c.out_degree_count || 0) > avgOut) bufferRatio += 0.15;
+    if ((c.glossary_load || 0) > avgGL) bufferRatio += 0.10;
 
-    c.buffer_time = Math.round(buffer);
-    c.study_time = Math.round(c.base_time + buffer);
+    // Optional Safety: Cap the maximum buffer ratio at 45% so base time doesn't vanish
+    bufferRatio = Math.min(bufferRatio, 0.45);
+
+    // 4. Calculate exact base and buffer times from the ceiling
+    const exactBufferTime = exactTotalTime * bufferRatio;
+    
+    // 5. SAFE ROUNDING: Prevent floating-point drift
+    c.study_time = Math.round(exactTotalTime);
+    c.buffer_time = Math.round(exactBufferTime);
+    
+    // Always subtract the rounded buffer from the rounded total to get the base.
+    // This mathematically guarantees base_time + buffer_time === study_time
+    c.base_time = c.study_time - c.buffer_time;
+
+    // 6. FLOOR FAILSAFE: Ensure no concept drops to zero minutes due to rounding
+    if (c.study_time < 15) {
+      c.study_time = 15;
+      c.buffer_time = Math.round(15 * bufferRatio);
+      c.base_time = c.study_time - c.buffer_time;
+    }
   });
 
   return concepts;
 }
-
 // Step 7 — Weekly Distribution based on real weekly time
 function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
   const weeklyCapacity = daily_hours * days_per_week * 60;
@@ -159,7 +177,6 @@ function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
 
   return weeklyPlan;
 }
-
 module.exports = {
   calculateGlossaryLoad,
   calculateActiveIndegree,

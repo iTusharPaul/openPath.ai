@@ -6,7 +6,10 @@ const roadmapRoutes = require("./routes/roadmap.routes");
 
 const app = express();
 
+
 app.use(express.json());
+
+
 
 app.use("/api", roadmapRoutes);
 
