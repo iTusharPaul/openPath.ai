@@ -139,36 +139,35 @@ async function generateRoadmap(userInput) {
   // --------------------------------------------------
   let conceptsResult;
 
-  if (accepted_concepts !== undefined) {
-    // If suggestions were already processed and accepted concepts are provided,
-    // ONLY fetch these exact nodes. Do not fetch recursively.
-    conceptsResult = await pool.query(`
+  if (experience_level === "beginner") {
+  // Beginner → recursive (needs full foundation)
+  conceptsResult = await pool.query(`
+    WITH RECURSIVE all_nodes AS (
       SELECT id, name, level, out_degree_count, semantic_density, term_vector,
              explanation, example, summary, key_points
       FROM concepts
       WHERE id = ANY($1::int[])
-    `, [finalConceptIds]);
-  } else {
-    // If no accepted_concepts are provided (e.g., advanced users where Step 0 is skipped),
-    // do the full recursive fetch.
-    conceptsResult = await pool.query(`
-      WITH RECURSIVE all_nodes AS (
-        SELECT id, name, level, out_degree_count, semantic_density, term_vector,
-               explanation, example, summary, key_points
-        FROM concepts
-        WHERE id = ANY($1::int[])
 
-        UNION
+      UNION
 
-        SELECT c.id, c.name, c.level, c.out_degree_count, c.semantic_density, c.term_vector,
-               c.explanation, c.example, c.summary, c.key_points
-        FROM concepts c
-        JOIN concept_prerequisites p ON c.id = p.prerequisite_id
-        JOIN all_nodes an ON an.id = p.concept_id
-      )
-      SELECT DISTINCT * FROM all_nodes;
-    `, [finalConceptIds]);
-  }
+      SELECT c.id, c.name, c.level, c.out_degree_count, c.semantic_density, c.term_vector,
+             c.explanation, c.example, c.summary, c.key_points
+      FROM concepts c
+      JOIN concept_prerequisites p ON c.id = p.prerequisite_id
+      JOIN all_nodes an ON an.id = p.concept_id
+    )
+    SELECT DISTINCT * FROM all_nodes;
+  `, [finalConceptIds]);
+
+} else {
+  // Intermediate / Advanced → ONLY target concepts
+  conceptsResult = await pool.query(`
+    SELECT id, name, level, out_degree_count, semantic_density, term_vector,
+           explanation, example, summary, key_points
+    FROM concepts
+    WHERE id = ANY($1::int[])
+  `, [finalConceptIds]);
+}
 
   let concepts = conceptsResult.rows;
   const conceptIds = concepts.map(c => c.id);

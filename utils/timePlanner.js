@@ -108,44 +108,53 @@ function allocateTime(concepts, totalMinutes) {
 function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
   const weeklyCapacity = daily_hours * days_per_week * 60;
 
-  const weeklyPlan = [];
-  let currentWeek = 1;
-  let weekTimeUsed = 0;
-  let weekConcepts = [];
+  const weeklyPlan = Array.from({ length: weeks }, (_, i) => ({
+    week: i + 1,
+    total_time: 0,
+    concepts: []
+  }));
+
+  let currentWeek = 0;
 
   for (let concept of concepts) {
-    if (weekTimeUsed + concept.study_time > weeklyCapacity && currentWeek < weeks) {
-      weeklyPlan.push({
-        week: currentWeek,
-        total_time: weekTimeUsed,
-        concepts: weekConcepts
+    let remainingTime = concept.study_time;
+    const bufferRatio = concept.buffer_time / concept.study_time || 0;
+
+    while (remainingTime > 0 && currentWeek < weeks) {
+      let available = weeklyCapacity - weeklyPlan[currentWeek].total_time;
+
+      if (available <= 0) {
+        currentWeek++;
+        continue;
+      }
+
+      const allocated = Math.min(remainingTime, available);
+
+      // 🔥 proportional buffer
+      const allocatedBuffer = Math.round(allocated * bufferRatio);
+      const allocatedBase = allocated - allocatedBuffer;
+
+      weeklyPlan[currentWeek].concepts.push({
+        concept_id: concept.concept_id,
+        concept: concept.concept,
+        level: concept.level,
+        phase: concept.phase,
+
+        allocated_time: allocated,
+        allocated_base_time: allocatedBase,
+        allocated_buffer_time: allocatedBuffer,
+
+        is_split: remainingTime !== concept.study_time,
+        remaining_after: remainingTime - allocated
       });
 
-      currentWeek++;
-      weekConcepts = [];
-      weekTimeUsed = 0;
+      weeklyPlan[currentWeek].total_time += allocated;
+      remainingTime -= allocated;
+
+      if (remainingTime > 0) {
+        currentWeek++;
+      }
     }
-
-    weekConcepts.push(concept);
-    weekTimeUsed += concept.study_time;
-  }
-
-  // Push last week
-  if (weekConcepts.length > 0) {
-    weeklyPlan.push({
-      week: currentWeek,
-      total_time: weekTimeUsed,
-      concepts: weekConcepts
-    });
-  }
-
-  // Fill remaining weeks
-  while (weeklyPlan.length < weeks) {
-    weeklyPlan.push({
-      week: weeklyPlan.length + 1,
-      total_time: 0,
-      concepts: []
-    });
   }
 
   return weeklyPlan;
