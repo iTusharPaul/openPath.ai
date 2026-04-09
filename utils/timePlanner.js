@@ -158,6 +158,14 @@ function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
         level: concept.level,
         phase: concept.phase,
 
+        // --- NEW FIELDS ADDED HERE ---
+        explanation: concept.explanation,
+        example: concept.example,
+        summary: concept.summary,
+        key_points: concept.key_points,
+        resources: concept.resources,
+        // -----------------------------
+
         allocated_time: allocated,
         allocated_base_time: allocatedBase,
         allocated_buffer_time: allocatedBuffer,
