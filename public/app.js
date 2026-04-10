@@ -50,16 +50,37 @@ function formatMinutes(totalMinutes) {
   return `${h}h ${m}m`;
 }
 
+// Concept mapping
+const CONCEPTS = [
+  {id:1,name:'Big O Notation'},{id:2,name:'Time Complexity'},{id:3,name:'Space Complexity'},{id:4,name:'Recursion'},{id:5,name:'Amortized Analysis'},{id:6,name:'Arrays'},{id:7,name:'Dynamic Arrays'},{id:8,name:'Strings'},{id:9,name:'Linked List'},{id:10,name:'Doubly Linked List'},{id:11,name:'Circular Linked List'},{id:12,name:'Stack'},{id:13,name:'Queue'},{id:14,name:'Deque'},{id:15,name:'Priority Queue'},{id:16,name:'Hash Tables'},{id:17,name:'Hash Functions'},{id:18,name:'Collision Handling'},{id:19,name:'Heap'},{id:20,name:'Min Heap'},{id:21,name:'Max Heap'},{id:22,name:'Heapify Operation'},{id:23,name:'Binary Tree'},{id:24,name:'Binary Tree Traversals'},{id:25,name:'Binary Search Tree'},{id:26,name:'AVL Tree'},{id:27,name:'Red-Black Tree'},{id:28,name:'Trie'},{id:29,name:'Segment Tree'},{id:30,name:'Fenwick Tree'},{id:31,name:'Graph Representation'},{id:32,name:'Breadth First Search'},{id:33,name:'Depth First Search'},{id:34,name:'Topological Sort'},{id:35,name:'Dijkstra’s Algorithm'},{id:36,name:'Bellman-Ford Algorithm'},{id:37,name:'Minimum Spanning Tree'},{id:38,name:'Union-Find'},{id:39,name:'Floyd-Warshall Algorithm'},{id:40,name:'Strongly Connected Components'}
+];
+
+// Populate dropdown
+(function initConceptDropdown(){
+  const input = document.querySelector("[name='concept_id']");
+  if (!input) return;
+  const select = document.createElement('select');
+  select.name = 'concept_id';
+  select.className = input.className;
+  CONCEPTS.forEach(c=>{
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.id} - ${c.name}`;
+    select.appendChild(opt);
+  });
+  input.replaceWith(select);
+})();
+
 function buildPayloadFromForm() {
   const formData = new FormData(els.form);
 
   const payload = {
-    concept_id: asInt(formData.get("concept_id"), null),
-    duration_weeks: asInt(formData.get("duration_weeks"), 6),
-    language: String(formData.get("language") || "general").trim() || "general",
-    experience_level: String(formData.get("experience_level") || "intermediate").trim(),
-    daily_hours: asFloat(formData.get("daily_hours"), 2),
-    days_per_week: asInt(formData.get("days_per_week"), 5)
+    concept_id: asInt(formData.get('concept_id'), null),
+    duration_weeks: asInt(formData.get('duration_weeks'), 6),
+    language: String(formData.get('language') || 'general').trim() || 'general',
+    experience_level: String(formData.get('experience_level') || 'intermediate').trim(),
+    daily_hours: asFloat(formData.get('daily_hours'), 2),
+    days_per_week: asInt(formData.get('days_per_week'), 5)
   };
 
   return { payload };
@@ -215,7 +236,12 @@ function renderConcept(c) {
 
   const meta = document.createElement("div");
   meta.className = "concept-meta";
-  meta.textContent = `Level ${c.level ?? "-"}  •  Study ${formatMinutes(c.study_time)}  •  Buffer ${formatMinutes(c.buffer_time)}`;
+
+  const base = c.allocated_base_time ?? 0;
+  const buffer = c.allocated_buffer_time ?? 0;
+  const total = c.allocated_time ?? (base + buffer);
+
+  meta.textContent = `Level ${c.level ?? "-"} • Study ${formatMinutes(base)} • Buffer ${formatMinutes(buffer)} • Total ${formatMinutes(total)}${c.is_split ? " • split" : ""}`;
 
   headerLeft.appendChild(name);
   headerLeft.appendChild(meta);
@@ -259,24 +285,32 @@ function renderDetails(c) {
   addSection("Example", c.example);
   addSection("Summary", c.summary);
 
+  // Key points may come as JSON string
   if (c.key_points) {
     const h = document.createElement("h4");
     h.textContent = "Key Points";
     wrap.appendChild(h);
 
+    let items = [];
+    if (Array.isArray(c.key_points)) {
+      items = c.key_points;
+    } else {
+      try {
+        const parsed = JSON.parse(c.key_points);
+        items = Array.isArray(parsed) ? parsed : String(c.key_points).split("\n");
+      } catch {
+        items = String(c.key_points).split("\n");
+      }
+    }
+
     const ul = document.createElement("ul");
-    const kp = Array.isArray(c.key_points) ? c.key_points : String(c.key_points).split("\n");
-    for (const item of kp.map(x => String(x).trim()).filter(Boolean)) {
+    for (const item of items.map(x => String(x).trim()).filter(Boolean)) {
       const li = document.createElement("li");
       li.textContent = item;
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
   }
-
-  const metrics = document.createElement("p");
-  metrics.innerHTML = `Metrics: ICF: ${Number(c.icf ?? 0).toFixed(3)} • Glossary Load: ${asInt(c.glossary_load, 0)}`;
-  wrap.appendChild(metrics);
 
   const resources = Array.isArray(c.resources) ? c.resources : [];
   if (resources.length) {
@@ -366,4 +400,3 @@ els.generateSelectedBtn.addEventListener("click", () => {
 els.skipContinueBtn.addEventListener("click", () => {
   runWithAccepted([]);
 });
-
