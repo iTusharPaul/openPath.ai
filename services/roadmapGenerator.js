@@ -6,6 +6,7 @@ const {
   calculateRelativeDepth,
   calculateICF,
   calculateWeights,
+  validatePathFeasibility,
   allocateTime,
   distributeConcepts
 } = require("../utils/timePlanner");
@@ -132,16 +133,11 @@ async function generateRoadmap(userInput) {
   }
 
   // --------------------------------------------------
-  // STEP 2 — Fetch prerequisite tree
-  // --------------------------------------------------
-  // --------------------------------------------------
-
- // --------------------------------------------------
-  // STEP 2 — Fetch exact concepts
+  // STEP 2 — Fetch exact concepts (UPDATED: Added min/max times)
   // --------------------------------------------------
   const conceptsResult = await pool.query(`
     SELECT id, name, level, out_degree_count, semantic_density, term_vector,
-           explanation, example, summary, key_points
+           explanation, example, summary, key_points, min_time_mins, max_time_mins
     FROM concepts
     WHERE id = ANY($1::int[])
   `, [finalConceptIds]);
@@ -175,7 +171,7 @@ async function generateRoadmap(userInput) {
   }
 
   // --------------------------------------------------
-  // STEP 5 — Cognitive Metrics
+  // STEP 5 — Cognitive Metrics & Time Allocation
   // --------------------------------------------------
   calculateGlossaryLoad(concepts);
   calculateActiveIndegree(concepts, edges);
@@ -186,7 +182,18 @@ async function generateRoadmap(userInput) {
   const totalHours = daily_hours * days_per_week * duration_weeks;
   const totalMinutes = totalHours * 60;
 
-  allocateTime(concepts, totalMinutes);
+  // NEW: Validate Feasibility before generating
+  const feasibility = validatePathFeasibility(concepts, totalMinutes);
+  if (!feasibility.isFeasible) {
+    return {
+      needs_suggestions: false,
+      status: "UNREALISTIC",
+      message: `Insufficient time. You need at least ${Math.ceil(feasibility.minRequired / 60)} hours to learn these concepts properly.`,
+      min_required_hours: Math.ceil(feasibility.minRequired / 60)
+    };
+  }
+
+  const { totalSurplus } = allocateTime(concepts, totalMinutes);
 
   // --------------------------------------------------
   // STEP 6 — Build roadmap + log
@@ -236,7 +243,9 @@ async function generateRoadmap(userInput) {
       study_time: concept.study_time,
       buffer_time: concept.buffer_time,
       icf: concept.icf,
-      glossary_load: concept.glossary_load
+      glossary_load: concept.glossary_load,
+      is_pivoted: concept.is_pivoted_to_application,
+      application_surplus: concept.surplus_time || 0
     });
   }
 

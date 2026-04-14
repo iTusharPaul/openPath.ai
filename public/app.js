@@ -232,7 +232,10 @@ function renderConcept(c) {
 
   const name = document.createElement("div");
   name.className = "concept-name";
-  name.textContent = `${c.concept ?? "Concept"} (${c.phase ?? "Other"})`;
+  
+  // NEW: Append Project phase if pivoted
+  const phaseName = c.is_pivoted ? `${c.phase ?? "Other"} + Applied Project` : (c.phase ?? "Other");
+  name.textContent = `${c.concept ?? "Concept"} (${phaseName})`;
 
   const meta = document.createElement("div");
   meta.className = "concept-meta";
@@ -270,6 +273,17 @@ function renderConcept(c) {
 
 function renderDetails(c) {
   const wrap = document.createElement("div");
+
+  // NEW: Highlight the pivot
+  if (c.is_pivoted) {
+    const h = document.createElement("h4");
+    h.textContent = "🚀 Advanced Application Module";
+    h.style.color = "#2f7cf6";
+    const p = document.createElement("p");
+    p.textContent = `You have an extra ${formatMinutes(c.application_surplus)} for this topic! Stop consuming theory and use this time to build a mini-project or solve 3-5 advanced LeetCode problems to solidify your mastery.`;
+    wrap.appendChild(h);
+    wrap.appendChild(p);
+  }
 
   const addSection = (title, text) => {
     if (!text) return;
@@ -352,6 +366,14 @@ async function runInitialGenerate() {
 
   try {
     const result = await postGenerateRoadmap(payload);
+
+    // NEW: Handle Feasibility check fail gracefully
+    if (result?.status === "UNREALISTIC") {
+      setStatus(result.message, { error: true });
+      els.roadmapSection.classList.add("hidden");
+      return;
+    }
+
     if (result?.needs_suggestions) {
       setStatus("");
       showSuggestions(result.suggestions || []);
@@ -368,17 +390,28 @@ async function runInitialGenerate() {
 }
 
 async function runWithAccepted(accepted_concepts) {
-  if (!lastPayload) return;
-
-  const { payload } = lastPayload;
+  // NEW: Get the freshest time values directly from the form!
+  // This replaces the old logic that relied on the outdated `lastPayload`
+  const { payload } = buildPayloadFromForm();
+  
+  // Combine the fresh form data with the accepted prerequisites
   const nextPayload = { ...payload, accepted_concepts };
 
   setBusy(true);
   setStatus("Generating…");
   try {
     const result = await postGenerateRoadmap(nextPayload);
+
+    if (result?.status === "UNREALISTIC") {
+      setStatus(result.message, { error: true });
+      els.roadmapSection.classList.add("hidden");
+      // Notice we do NOT hide the suggestions section here.
+      // This allows the user to simply change the time inputs and click the button again!
+      return;
+    }
+
     setStatus("");
-    els.suggestionsSection.classList.add("hidden");
+    els.suggestionsSection.classList.add("hidden"); // Hide suggestions on success
     renderRoadmap(result);
   } catch (err) {
     setStatus(err?.message || "Something went wrong.", { error: true });
