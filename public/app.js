@@ -8,11 +8,25 @@ const els = {
   skipContinueBtn: document.getElementById("skip-continue"),
   roadmapSection: document.getElementById("roadmap-section"),
   roadmap: document.getElementById("roadmap"),
-  conceptCount: document.getElementById("concept-count")
+  conceptCount: document.getElementById("concept-count"),
+  
+  // NEW: Quiz Elements
+  quizModal: document.getElementById("quiz-modal"),
+  quizTitle: document.getElementById("quiz-title"),
+  quizBody: document.getElementById("quiz-body"),
+  quizScoreMsg: document.getElementById("quiz-score-msg"),
+  submitQuizBtn: document.getElementById("submit-quiz-btn"),
+  retakeQuizBtn: document.getElementById("retake-quiz-btn"),
+  closeQuizBtn: document.getElementById("close-quiz-btn")
 };
 
 let lastPayload = null;
 let lastSuggestions = [];
+
+// NEW: Quiz State
+let activeQuizOriginalData = null;
+let activeQuizQuestions = [];
+let activeQuizAnswers = []; // Stores user selections
 
 function setStatus(message, { error = false } = {}) {
   if (!message) {
@@ -233,7 +247,6 @@ function renderConcept(c) {
   const name = document.createElement("div");
   name.className = "concept-name";
   
-  // NEW: Append Project phase if pivoted
   const phaseName = c.is_pivoted ? `${c.phase ?? "Other"} + Applied Project` : (c.phase ?? "Other");
   name.textContent = `${c.concept ?? "Concept"} (${phaseName})`;
 
@@ -274,7 +287,7 @@ function renderConcept(c) {
 function renderDetails(c) {
   const wrap = document.createElement("div");
 
-  // NEW: Highlight the pivot
+  // 1. Highlight the pivot (Application Module)
   if (c.is_pivoted) {
     const h = document.createElement("h4");
     h.textContent = "🚀 Advanced Application Module";
@@ -285,6 +298,7 @@ function renderDetails(c) {
     wrap.appendChild(p);
   }
 
+  // Helper for text sections
   const addSection = (title, text) => {
     if (!text) return;
     const h = document.createElement("h4");
@@ -295,11 +309,12 @@ function renderDetails(c) {
     wrap.appendChild(p);
   };
 
+  // 2. Core Educational Content
   addSection("Explanation", c.explanation);
   addSection("Example", c.example);
   addSection("Summary", c.summary);
 
-  // Key points may come as JSON string
+  // 3. Key Points (Safely handle JSON strings or Arrays)
   if (c.key_points) {
     const h = document.createElement("h4");
     h.textContent = "Key Points";
@@ -326,6 +341,7 @@ function renderDetails(c) {
     wrap.appendChild(ul);
   }
 
+  // 4. Resources
   const resources = Array.isArray(c.resources) ? c.resources : [];
   if (resources.length) {
     const h = document.createElement("h4");
@@ -346,8 +362,197 @@ function renderDetails(c) {
     wrap.appendChild(ul);
   }
 
+  // 5. Quiz Logic (With safe JSON parsing)
+  let quizData = c.mcq_quiz;
+  if (typeof quizData === 'string') {
+    try {
+      quizData = JSON.parse(quizData);
+    } catch (err) {
+      console.error("Failed to parse quiz data", err);
+    }
+  }
+
+  // Inject the Take Quiz button if quiz data exists and is a valid array
+  if (quizData && Array.isArray(quizData) && quizData.length > 0) {
+    const quizBtn = document.createElement("button");
+    quizBtn.className = "btn btn-primary mt-3";
+    quizBtn.textContent = "Take Quiz";
+    quizBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // Prevent closing the accordion
+      openQuiz(c.concept, quizData); // Pass the safely parsed array
+    });
+    wrap.appendChild(quizBtn);
+  }
+
   return wrap;
 }
+
+// ==========================================
+// QUIZ LOGIC
+// ==========================================
+
+function shuffleArray(arr) {
+  const newArr = [...arr];
+  for (let i = newArr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+  }
+  return newArr;
+}
+
+function mapQuizData(originalData, shouldShuffle) {
+  let mapped = originalData.map(q => {
+    // Map options to objects so we don't lose the "correct" flag when shuffling
+    let opts = q.options.map((optText, index) => ({
+      text: optText,
+      isCorrect: index === q.correct_index
+    }));
+    
+    if (shouldShuffle) {
+      opts = shuffleArray(opts);
+    }
+
+    return {
+      question: q.question,
+      options: opts,
+      explanation: q.explanation
+    };
+  });
+
+  if (shouldShuffle) {
+    mapped = shuffleArray(mapped);
+  }
+
+  return mapped;
+}
+
+function openQuiz(title, mcqData) {
+  activeQuizOriginalData = mcqData;
+  els.quizTitle.textContent = `${title} Quiz`;
+  
+  // Start fresh (no shuffle on first attempt)
+  startQuizFlow(false);
+  els.quizModal.classList.remove("hidden");
+}
+
+function startQuizFlow(shouldShuffle) {
+  activeQuizQuestions = mapQuizData(activeQuizOriginalData, shouldShuffle);
+  activeQuizAnswers = new Array(activeQuizQuestions.length).fill(null);
+  
+  // Reset UI
+  els.quizScoreMsg.classList.add("hidden");
+  els.quizScoreMsg.textContent = "";
+  els.quizScoreMsg.className = "quiz-score-msg hidden";
+  
+  els.submitQuizBtn.classList.remove("hidden");
+  els.retakeQuizBtn.classList.add("hidden");
+
+  els.quizBody.innerHTML = "";
+
+  activeQuizQuestions.forEach((q, qIndex) => {
+    const qDiv = document.createElement("div");
+    qDiv.className = "quiz-q";
+
+    const h4 = document.createElement("h4");
+    h4.textContent = `${qIndex + 1}. ${q.question}`;
+    qDiv.appendChild(h4);
+
+    const optsDiv = document.createElement("div");
+    optsDiv.className = "quiz-opts";
+    optsDiv.dataset.qIndex = qIndex;
+
+    q.options.forEach((opt, oIndex) => {
+      const optBtn = document.createElement("button");
+      optBtn.className = "quiz-opt";
+      optBtn.textContent = opt.text;
+      optBtn.dataset.oIndex = oIndex;
+
+      optBtn.addEventListener("click", () => handleOptionSelect(qIndex, oIndex));
+      optsDiv.appendChild(optBtn);
+    });
+
+    qDiv.appendChild(optsDiv);
+
+    // Placeholder for explanation
+    const expDiv = document.createElement("div");
+    expDiv.className = "quiz-exp hidden";
+    expDiv.id = `quiz-exp-${qIndex}`;
+    expDiv.textContent = `Explanation: ${q.explanation}`;
+    qDiv.appendChild(expDiv);
+
+    els.quizBody.appendChild(qDiv);
+  });
+}
+
+function handleOptionSelect(qIndex, oIndex) {
+  activeQuizAnswers[qIndex] = oIndex;
+  
+  const optsDiv = els.quizBody.querySelector(`[data-q-index="${qIndex}"]`);
+  const buttons = optsDiv.querySelectorAll(".quiz-opt");
+  
+  buttons.forEach(btn => btn.classList.remove("selected"));
+  buttons[oIndex].classList.add("selected");
+}
+
+els.submitQuizBtn.addEventListener("click", () => {
+  if (activeQuizAnswers.includes(null)) {
+    alert("Please answer all questions before submitting.");
+    return;
+  }
+
+  let score = 0;
+  
+  activeQuizQuestions.forEach((q, qIndex) => {
+    const selectedOIndex = activeQuizAnswers[qIndex];
+    const optsDiv = els.quizBody.querySelector(`[data-q-index="${qIndex}"]`);
+    const buttons = optsDiv.querySelectorAll(".quiz-opt");
+
+    buttons.forEach(btn => btn.classList.add("disabled")); // lock inputs
+
+    const isCorrect = q.options[selectedOIndex].isCorrect;
+    if (isCorrect) {
+      score++;
+      buttons[selectedOIndex].classList.add("correct");
+    } else {
+      buttons[selectedOIndex].classList.add("wrong");
+      // Highlight the correct one
+      const correctIdx = q.options.findIndex(o => o.isCorrect);
+      buttons[correctIdx].classList.add("correct");
+    }
+
+    // Show Explanation
+    const expDiv = document.getElementById(`quiz-exp-${qIndex}`);
+    expDiv.classList.remove("hidden");
+    expDiv.classList.add("show");
+  });
+
+  // Handle Score Display
+  els.submitQuizBtn.classList.add("hidden");
+  els.quizScoreMsg.classList.remove("hidden");
+  
+  const threshold = Math.ceil(activeQuizQuestions.length * 0.66); // 2 out of 3
+
+  if (score >= threshold) {
+    els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length} 🎉 Excellent!`;
+    els.quizScoreMsg.classList.add("pass");
+  } else {
+    els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length}. Let's review the material and try again.`;
+    els.quizScoreMsg.classList.add("fail");
+    els.retakeQuizBtn.classList.remove("hidden");
+  }
+});
+
+els.retakeQuizBtn.addEventListener("click", () => {
+  startQuizFlow(true); // Shuffle on retake
+});
+
+els.closeQuizBtn.addEventListener("click", () => {
+  els.quizModal.classList.add("hidden");
+});
+
+// ==========================================
+// CORE GENERATION
+// ==========================================
 
 async function runInitialGenerate() {
   clearOutputs();
@@ -367,7 +572,6 @@ async function runInitialGenerate() {
   try {
     const result = await postGenerateRoadmap(payload);
 
-    // NEW: Handle Feasibility check fail gracefully
     if (result?.status === "UNREALISTIC") {
       setStatus(result.message, { error: true });
       els.roadmapSection.classList.add("hidden");
@@ -390,11 +594,8 @@ async function runInitialGenerate() {
 }
 
 async function runWithAccepted(accepted_concepts) {
-  // NEW: Get the freshest time values directly from the form!
-  // This replaces the old logic that relied on the outdated `lastPayload`
   const { payload } = buildPayloadFromForm();
   
-  // Combine the fresh form data with the accepted prerequisites
   const nextPayload = { ...payload, accepted_concepts };
 
   setBusy(true);
@@ -405,13 +606,11 @@ async function runWithAccepted(accepted_concepts) {
     if (result?.status === "UNREALISTIC") {
       setStatus(result.message, { error: true });
       els.roadmapSection.classList.add("hidden");
-      // Notice we do NOT hide the suggestions section here.
-      // This allows the user to simply change the time inputs and click the button again!
       return;
     }
 
     setStatus("");
-    els.suggestionsSection.classList.add("hidden"); // Hide suggestions on success
+    els.suggestionsSection.classList.add("hidden"); 
     renderRoadmap(result);
   } catch (err) {
     setStatus(err?.message || "Something went wrong.", { error: true });

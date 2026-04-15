@@ -133,11 +133,12 @@ async function generateRoadmap(userInput) {
   }
 
   // --------------------------------------------------
-  // STEP 2 — Fetch exact concepts (UPDATED: Added min/max times)
+  // STEP 2 — Fetch exact concepts (UPDATED: Added mcq_quiz)
   // --------------------------------------------------
+  // STEP 2 — Fetch exact concepts
   const conceptsResult = await pool.query(`
     SELECT id, name, level, out_degree_count, semantic_density, term_vector,
-           explanation, example, summary, key_points, min_time_mins, max_time_mins
+           explanation, example, summary, key_points, min_time_mins, max_time_mins, mcq_quiz
     FROM concepts
     WHERE id = ANY($1::int[])
   `, [finalConceptIds]);
@@ -182,7 +183,6 @@ async function generateRoadmap(userInput) {
   const totalHours = daily_hours * days_per_week * duration_weeks;
   const totalMinutes = totalHours * 60;
 
-  // NEW: Validate Feasibility before generating
   const feasibility = validatePathFeasibility(concepts, totalMinutes);
   if (!feasibility.isFeasible) {
     return {
@@ -230,7 +230,7 @@ async function generateRoadmap(userInput) {
       ]
     );
 
-    roadmapConcepts.push({
+   roadmapConcepts.push({
       concept_id: concept.id,
       concept: concept.name,
       level: concept.level,
@@ -245,7 +245,9 @@ async function generateRoadmap(userInput) {
       icf: concept.icf,
       glossary_load: concept.glossary_load,
       is_pivoted: concept.is_pivoted_to_application,
-      application_surplus: concept.surplus_time || 0
+      application_surplus: concept.surplus_time || 0,
+      
+      mcq_quiz: concept.mcq_quiz // <--- ADD THIS LINE HERE
     });
   }
 

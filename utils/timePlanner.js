@@ -186,7 +186,7 @@ function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
       const allocatedBuffer = Math.round(allocated * bufferRatio);
       const allocatedBase = allocated - allocatedBuffer;
 
-      weeklyPlan[currentWeek].concepts.push({
+     weeklyPlan[currentWeek].concepts.push({
         concept_id: concept.concept_id,
         concept: concept.concept,
         level: concept.level,
@@ -199,9 +199,10 @@ function distributeConcepts(concepts, weeks, daily_hours, days_per_week) {
         key_points: concept.key_points,
         resources: concept.resources,
         
-        // NEW: Feasibility Engine Pivot Flags
         is_pivoted: concept.is_pivoted,
         application_surplus: concept.application_surplus,
+        
+        mcq_quiz: concept.mcq_quiz, // <--- ADD THIS LINE HERE
 
         allocated_time: allocated,
         allocated_base_time: allocatedBase,

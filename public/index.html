@@ -104,7 +104,22 @@
       </section>
     </main>
 
+    <div id="quiz-modal" class="modal hidden" aria-label="Quiz Modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="quiz-title">Concept Quiz</h2>
+          <button id="close-quiz-btn" class="icon-btn">&times;</button>
+        </div>
+        <div id="quiz-body" class="quiz-body">
+          </div>
+        <div class="modal-footer">
+          <div id="quiz-score-msg" class="quiz-score-msg hidden"></div>
+          <button id="submit-quiz-btn" class="btn btn-primary">Submit Quiz</button>
+          <button id="retake-quiz-btn" class="btn btn-secondary hidden">Retake Quiz</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/app.js"></script>
   </body>
 </html>
-
