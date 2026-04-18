@@ -11,6 +11,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
   </head>
   <body>
     <div class="bg-grid" aria-hidden="true"></div>
@@ -92,12 +93,32 @@
         </div>
       </section>
 
-      <section id="roadmap-section" class="card hidden" aria-label="Generated Roadmap">
+     <section id="roadmap-section" class="card hidden" aria-label="Generated Roadmap">
         <div class="card-header row-between">
           <div>
             <h2>Generated Roadmap</h2>
           </div>
-          <div id="concept-count" class="pill">0 concepts</div>
+          <div class="row-between" style="gap: 12px;">
+            <button id="view-toggle-btn" type="button" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Show Graph View</button>
+            <div id="concept-count" class="pill">0 concepts</div>
+          </div>
+        </div>
+
+        <div id="cy-container" class="hidden" style="position: relative; height: 500px; width: 100%; border-radius: 12px; background: rgba(5, 8, 14, 0.8); border: 1px solid var(--border); margin-bottom: 16px; overflow: hidden;">
+          
+          <div id="graph-legend" class="graph-legend">
+            <h4>Visual Legend</h4>
+            <div class="legend-item"><span class="legend-color" style="background: #4ade80;"></span> Foundations (Lvl 1)</div>
+            <div class="legend-item"><span class="legend-color" style="background: #60a5fa;"></span> Linear Data (Lvl 2)</div>
+            <div class="legend-item"><span class="legend-color" style="background: #c084fc;"></span> Hashing/Heaps (Lvl 3)</div>
+            <div class="legend-item"><span class="legend-color" style="background: #fb923c;"></span> Trees (Lvl 4)</div>
+            <div class="legend-item"><span class="legend-color" style="background: #f87171;"></span> Graphs (Lvl 5)</div>
+            <hr class="legend-divider">
+            <div class="legend-item">🔵 Larger Node = Core/Linchpin Topic</div>
+            <div class="legend-item">⭕ White Border = High Mental Friction</div>
+            <div class="legend-item">✅ Checkmark = Quiz Passed</div>
+          </div>
+
         </div>
 
         <div id="roadmap" class="roadmap"></div>

@@ -17,7 +17,9 @@ const els = {
   quizScoreMsg: document.getElementById("quiz-score-msg"),
   submitQuizBtn: document.getElementById("submit-quiz-btn"),
   retakeQuizBtn: document.getElementById("retake-quiz-btn"),
-  closeQuizBtn: document.getElementById("close-quiz-btn")
+  closeQuizBtn: document.getElementById("close-quiz-btn"),
+  viewToggleBtn: document.getElementById("view-toggle-btn"),
+  cyContainer: document.getElementById("cy-container")
 };
 
 let lastPayload = null;
@@ -27,6 +29,8 @@ let lastSuggestions = [];
 let activeQuizOriginalData = null;
 let activeQuizQuestions = [];
 let activeQuizAnswers = []; // Stores user selections
+let activeQuizConceptId = null; // Track WHICH concept is taking the quiz
+let completedConcepts = new Set(); // Track passed quizzes globally
 
 function setStatus(message, { error = false } = {}) {
   if (!message) {
@@ -63,7 +67,110 @@ function formatMinutes(totalMinutes) {
   if (m <= 0) return `${h}h`;
   return `${h}h ${m}m`;
 }
+let cyInstance = null;
 
+els.viewToggleBtn.addEventListener("click", () => {
+  const isGraphHidden = els.cyContainer.classList.contains("hidden");
+  if (isGraphHidden) {
+    els.cyContainer.classList.remove("hidden");
+    els.roadmap.classList.add("hidden");
+    els.viewToggleBtn.textContent = "Show List View";
+    if (cyInstance) cyInstance.resize(); // Fixes canvas sizing bugs
+  } else {
+    els.cyContainer.classList.add("hidden");
+    els.roadmap.classList.remove("hidden");
+    els.viewToggleBtn.textContent = "Show Graph View";
+  }
+});
+
+function renderGraph(graphData) {
+  if (cyInstance) { cyInstance.destroy(); }
+
+  const elements = [];
+  
+  // Map Math to Visuals
+  graphData.nodes.forEach(n => {
+    elements.push({
+      data: {
+        id: n.id,
+        name: n.name,
+        level: n.level,
+        size: 25 + (n.out_degree * 6), // "Linchpin" concepts are physically larger
+        icf: n.icf,
+        completed: completedConcepts.has(Number(n.id)) // Inject completion state
+      }
+    });
+  });
+
+  graphData.edges.forEach(e => {
+    elements.push({ data: { source: e.source, target: e.target } });
+  });
+
+  // Phase Colors mapping
+  const levelColors = {
+    1: '#4ade80', // Foundations (Green)
+    2: '#60a5fa', // Linear (Blue)
+    3: '#8000ff', // Hashing (Purple)
+    4: '#fb923c', // Trees (Orange)
+    5: '#f87171'  // Graphs (Red)
+  };
+
+  cyInstance = cytoscape({
+    container: els.cyContainer,
+    elements: elements,
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'label': function(ele) { return (ele.data('completed') ? '✅ ' : '') + ele.data('name'); },
+          'width': 'data(size)',
+          'height': 'data(size)',
+          'background-color': (ele) => levelColors[ele.data('level')] || '#9ca3af',
+          'opacity': function(ele) { return ele.data('completed') ? 0.5 : 1; }, // Dim if completed
+          'color': '#fff',
+          'text-valign': 'bottom',
+          'text-margin-y': 6,
+          'font-size': '11px',
+          'font-weight': 'bold',
+          // Glow effect for high Cognitive Friction (ICF)
+          'border-width': (ele) => ele.data('icf') > 0.6 ? 3 : 0, 
+          'border-color': '#fff'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': 'rgba(255, 255, 255, 0.15)',
+          'target-arrow-color': 'rgba(255, 255, 255, 0.15)',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier'
+        }
+      }
+    ],
+    layout: {
+      name: 'breadthfirst', // Renders the DAG logically top-to-bottom
+      directed: true,
+      spacingFactor: 1.1
+    }
+  });
+
+  // Interactivity: Clicking a node in the graph jumps to the List View explanation
+  cyInstance.on('tap', 'node', function(evt){
+    const nodeId = evt.target.id();
+    els.viewToggleBtn.click(); // Switch back to list view
+    
+    const card = document.getElementById('concept-card-' + nodeId);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Auto-expand the clicked concept
+      const details = card.querySelector('.details');
+      if (details.classList.contains('hidden')) {
+        card.querySelector('.concept-header').click();
+      }
+    }
+  });
+}
 // Concept mapping
 const CONCEPTS = [
   {id:1,name:'Big O Notation'},{id:2,name:'Time Complexity'},{id:3,name:'Space Complexity'},{id:4,name:'Recursion'},{id:5,name:'Amortized Analysis'},{id:6,name:'Arrays'},{id:7,name:'Dynamic Arrays'},{id:8,name:'Strings'},{id:9,name:'Linked List'},{id:10,name:'Doubly Linked List'},{id:11,name:'Circular Linked List'},{id:12,name:'Stack'},{id:13,name:'Queue'},{id:14,name:'Deque'},{id:15,name:'Priority Queue'},{id:16,name:'Hash Tables'},{id:17,name:'Hash Functions'},{id:18,name:'Collision Handling'},{id:19,name:'Heap'},{id:20,name:'Min Heap'},{id:21,name:'Max Heap'},{id:22,name:'Heapify Operation'},{id:23,name:'Binary Tree'},{id:24,name:'Binary Tree Traversals'},{id:25,name:'Binary Search Tree'},{id:26,name:'AVL Tree'},{id:27,name:'Red-Black Tree'},{id:28,name:'Trie'},{id:29,name:'Segment Tree'},{id:30,name:'Fenwick Tree'},{id:31,name:'Graph Representation'},{id:32,name:'Breadth First Search'},{id:33,name:'Depth First Search'},{id:34,name:'Topological Sort'},{id:35,name:'Dijkstra’s Algorithm'},{id:36,name:'Bellman-Ford Algorithm'},{id:37,name:'Minimum Spanning Tree'},{id:38,name:'Union-Find'},{id:39,name:'Floyd-Warshall Algorithm'},{id:40,name:'Strongly Connected Components'}
@@ -186,6 +293,14 @@ function renderRoadmap(result) {
 
   els.conceptCount.textContent = `${total} concepts`;
   els.roadmap.innerHTML = "";
+  els.cyContainer.classList.add("hidden");
+  els.roadmap.classList.remove("hidden");
+  els.viewToggleBtn.textContent = "Show Graph View";
+
+  // Trigger new graph render
+  if (result.graph_data) {
+    renderGraph(result.graph_data);
+  }
 
   for (const w of roadmap) {
     const weekEl = document.createElement("div");
@@ -236,6 +351,8 @@ function renderRoadmap(result) {
 function renderConcept(c) {
   const conceptEl = document.createElement("div");
   conceptEl.className = "concept";
+  // NEW: Add ID for the Graph anchor and completion updates
+  conceptEl.id = "concept-card-" + c.concept_id;
 
   const header = document.createElement("button");
   header.type = "button";
@@ -249,6 +366,14 @@ function renderConcept(c) {
   
   const phaseName = c.is_pivoted ? `${c.phase ?? "Other"} + Applied Project` : (c.phase ?? "Other");
   name.textContent = `${c.concept ?? "Concept"} (${phaseName})`;
+
+  // Re-apply passed badge if rendering after state update (e.g., toggles)
+  if (completedConcepts.has(Number(c.concept_id))) {
+    const badge = document.createElement("span");
+    badge.className = "completed-badge";
+    badge.textContent = "✅ Passed";
+    name.appendChild(badge);
+  }
 
   const meta = document.createElement("div");
   meta.className = "concept-meta";
@@ -379,7 +504,7 @@ function renderDetails(c) {
     quizBtn.textContent = "Take Quiz";
     quizBtn.addEventListener("click", (e) => {
       e.stopPropagation(); // Prevent closing the accordion
-      openQuiz(c.concept, quizData); // Pass the safely parsed array
+      openQuiz(c.concept_id, c.concept, quizData); // Pass the ID and safely parsed array
     });
     wrap.appendChild(quizBtn);
   }
@@ -426,7 +551,8 @@ function mapQuizData(originalData, shouldShuffle) {
   return mapped;
 }
 
-function openQuiz(title, mcqData) {
+function openQuiz(conceptId, title, mcqData) {
+  activeQuizConceptId = conceptId; // Save it to state
   activeQuizOriginalData = mcqData;
   els.quizTitle.textContent = `${title} Quiz`;
   
@@ -535,6 +661,31 @@ els.submitQuizBtn.addEventListener("click", () => {
   if (score >= threshold) {
     els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length} 🎉 Excellent!`;
     els.quizScoreMsg.classList.add("pass");
+
+    // NEW: Mark Concept as Completed
+    completedConcepts.add(activeQuizConceptId);
+
+    // 1. Update the List View (Add Green Badge)
+    const listCard = document.getElementById("concept-card-" + activeQuizConceptId);
+    if (listCard) {
+      const nameEl = listCard.querySelector(".concept-name");
+      if (!nameEl.querySelector(".completed-badge")) {
+        const badge = document.createElement("span");
+        badge.className = "completed-badge";
+        badge.textContent = "✅ Passed";
+        nameEl.appendChild(badge);
+      }
+    }
+
+    // 2. Update the Graph View (Add Checkmark + Dim Opacity)
+    if (typeof cyInstance !== 'undefined' && cyInstance) {
+      const node = cyInstance.$('#' + activeQuizConceptId);
+      if (node && node.length > 0) {
+        node.data('completed', true);
+        node.style('opacity', 0.5); // Dim it to show it's "done"
+      }
+    }
+
   } else {
     els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length}. Let's review the material and try again.`;
     els.quizScoreMsg.classList.add("fail");

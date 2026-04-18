@@ -260,11 +260,32 @@ async function generateRoadmap(userInput) {
     daily_hours,
     days_per_week
   );
+  // NEW: Prepare Data for Cytoscape.js Visualization
+  const conceptIdSet = new Set(concepts.map(c => c.id));
+  const validEdges = edges.filter(e => 
+    conceptIdSet.has(e.concept_id) && conceptIdSet.has(e.prerequisite_id)
+  );
 
+  const graphData = {
+    nodes: concepts.map(c => ({
+      id: String(c.id),
+      name: c.name,
+      level: c.level,
+      icf: c.icf,
+      out_degree: c.out_degree_count || 0
+    })),
+    edges: validEdges.map(e => ({
+      source: String(e.prerequisite_id),
+      target: String(e.concept_id)
+    }))
+  };
+
+  // UPDATED RETURN: Include graph_data
   return {
     needs_suggestions: false,
     total_concepts: roadmapConcepts.length,
-    roadmap: weeklyPlan
+    roadmap: weeklyPlan,
+    graph_data: graphData
   };
 }
 
