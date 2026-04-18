@@ -10,7 +10,6 @@ const els = {
   roadmap: document.getElementById("roadmap"),
   conceptCount: document.getElementById("concept-count"),
   
-  // NEW: Quiz Elements
   quizModal: document.getElementById("quiz-modal"),
   quizTitle: document.getElementById("quiz-title"),
   quizBody: document.getElementById("quiz-body"),
@@ -19,27 +18,38 @@ const els = {
   retakeQuizBtn: document.getElementById("retake-quiz-btn"),
   closeQuizBtn: document.getElementById("close-quiz-btn"),
   viewToggleBtn: document.getElementById("view-toggle-btn"),
-  cyContainer: document.getElementById("cy-container")
+  cyContainer: document.getElementById("cy-container"),
+
+  // NEW: YouTube Modal Elements
+  ytModal: document.getElementById("yt-modal"),
+  ytIframe: document.getElementById("yt-iframe"),
+  closeYtBtn: document.getElementById("close-yt-btn")
 };
 
 let lastPayload = null;
 let lastSuggestions = [];
 
-// NEW: Quiz State
 let activeQuizOriginalData = null;
 let activeQuizQuestions = [];
-let activeQuizAnswers = []; // Stores user selections
-let activeQuizConceptId = null; // Track WHICH concept is taking the quiz
-let completedConcepts = new Set(); // Track passed quizzes globally
+let activeQuizAnswers = [];
+let activeQuizConceptId = null; 
+let completedConcepts = new Set(); 
+
+// Close YT Modal Logic
+els.closeYtBtn.addEventListener("click", () => {
+  els.ytModal.classList.add("hidden");
+  els.ytModal.classList.remove("flex");
+  els.ytIframe.src = ""; // Stop the video
+});
 
 function setStatus(message, { error = false } = {}) {
   if (!message) {
     els.status.textContent = "";
-    els.status.classList.remove("error");
+    els.status.classList.remove("text-red-400");
     return;
   }
   els.status.textContent = message;
-  els.status.classList.toggle("error", error);
+  els.status.classList.toggle("text-red-400", error);
 }
 
 function setBusy(busy) {
@@ -47,6 +57,8 @@ function setBusy(busy) {
   els.generateSelectedBtn.disabled = busy;
   els.skipContinueBtn.disabled = busy;
   document.body.style.cursor = busy ? "progress" : "";
+  if(busy) els.generateBtn.classList.add("opacity-50", "pointer-events-none");
+  else els.generateBtn.classList.remove("opacity-50", "pointer-events-none");
 }
 
 function asInt(v, fallback) {
@@ -67,6 +79,7 @@ function formatMinutes(totalMinutes) {
   if (m <= 0) return `${h}h`;
   return `${h}h ${m}m`;
 }
+
 let cyInstance = null;
 
 els.viewToggleBtn.addEventListener("click", () => {
@@ -74,12 +87,16 @@ els.viewToggleBtn.addEventListener("click", () => {
   if (isGraphHidden) {
     els.cyContainer.classList.remove("hidden");
     els.roadmap.classList.add("hidden");
-    els.viewToggleBtn.textContent = "Show List View";
-    if (cyInstance) cyInstance.resize(); // Fixes canvas sizing bugs
+    els.viewToggleBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg> Show List View`;
+    els.roadmapSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (cyInstance) { 
+      cyInstance.resize(); 
+      cyInstance.fit(null, 30); 
+    }
   } else {
     els.cyContainer.classList.add("hidden");
     els.roadmap.classList.remove("hidden");
-    els.viewToggleBtn.textContent = "Show Graph View";
+    els.viewToggleBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Show Graph View`;
   }
 });
 
@@ -88,16 +105,15 @@ function renderGraph(graphData) {
 
   const elements = [];
   
-  // Map Math to Visuals
   graphData.nodes.forEach(n => {
     elements.push({
       data: {
         id: n.id,
         name: n.name,
         level: n.level,
-        size: 25 + (n.out_degree * 6), // "Linchpin" concepts are physically larger
+        size: 25 + (n.out_degree * 5),
         icf: n.icf,
-        completed: completedConcepts.has(Number(n.id)) // Inject completion state
+        completed: completedConcepts.has(Number(n.id))
       }
     });
   });
@@ -106,13 +122,13 @@ function renderGraph(graphData) {
     elements.push({ data: { source: e.source, target: e.target } });
   });
 
-  // Phase Colors mapping
+  // Theme: Black, White, Blue logic applied for Dark Bg
   const levelColors = {
-    1: '#4ade80', // Foundations (Green)
-    2: '#60a5fa', // Linear (Blue)
-    3: '#8000ff', // Hashing (Purple)
-    4: '#fb923c', // Trees (Orange)
-    5: '#f87171'  // Graphs (Red)
+    1: '#ffffff', // Lvl 1: White
+    2: '#bfdbfe', // Lvl 2: Light Blue
+    3: '#60a5fa', // Lvl 3: Med Blue
+    4: '#2563eb', // Lvl 4: Primary Blue
+    5: '#1e3a8a'  // Lvl 5: Dark Blue
   };
 
   cyInstance = cytoscape({
@@ -125,76 +141,71 @@ function renderGraph(graphData) {
           'label': function(ele) { return (ele.data('completed') ? '✅ ' : '') + ele.data('name'); },
           'width': 'data(size)',
           'height': 'data(size)',
-          'background-color': (ele) => levelColors[ele.data('level')] || '#9ca3af',
-          'opacity': function(ele) { return ele.data('completed') ? 0.5 : 1; }, // Dim if completed
-          'color': '#fff',
+          'background-color': (ele) => levelColors[ele.data('level')] || '#94a3b8',
+          'opacity': function(ele) { return ele.data('completed') ? 0.35 : 1; }, 
+          'color': '#f8fafc', // slate-50
           'text-valign': 'bottom',
           'text-margin-y': 6,
           'font-size': '11px',
-          'font-weight': 'bold',
-          // Glow effect for high Cognitive Friction (ICF)
+          'font-weight': '600',
+          'text-background-color': '#0f172a', 
+          'text-background-opacity': 0.8,
+          'text-background-padding': '3px',
+          'text-border-radius': '4px',
           'border-width': (ele) => ele.data('icf') > 0.6 ? 3 : 0, 
-          'border-color': '#fff'
+          'border-color': '#ffffff'
         }
       },
       {
         selector: 'edge',
         style: {
           'width': 2,
-          'line-color': 'rgba(255, 255, 255, 0.15)',
-          'target-arrow-color': 'rgba(255, 255, 255, 0.15)',
+          'line-color': '#334155', // slate-700
+          'target-arrow-color': '#334155',
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier'
         }
       }
     ],
     layout: {
-      name: 'breadthfirst', // Renders the DAG logically top-to-bottom
+      name: 'breadthfirst',
       directed: true,
-      spacingFactor: 1.1
+      spacingFactor: 1.15
     }
   });
 
-  // Interactivity: Clicking a node in the graph jumps to the List View explanation
   cyInstance.on('tap', 'node', function(evt){
     const nodeId = evt.target.id();
-    els.viewToggleBtn.click(); // Switch back to list view
+    els.viewToggleBtn.click(); 
     
     const card = document.getElementById('concept-card-' + nodeId);
     if (card) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Auto-expand the clicked concept
-      const details = card.querySelector('.details');
+      const details = card.querySelector('.details-wrapper');
       if (details.classList.contains('hidden')) {
         card.querySelector('.concept-header').click();
       }
     }
   });
 }
-// Concept mapping
+
 const CONCEPTS = [
   {id:1,name:'Big O Notation'},{id:2,name:'Time Complexity'},{id:3,name:'Space Complexity'},{id:4,name:'Recursion'},{id:5,name:'Amortized Analysis'},{id:6,name:'Arrays'},{id:7,name:'Dynamic Arrays'},{id:8,name:'Strings'},{id:9,name:'Linked List'},{id:10,name:'Doubly Linked List'},{id:11,name:'Circular Linked List'},{id:12,name:'Stack'},{id:13,name:'Queue'},{id:14,name:'Deque'},{id:15,name:'Priority Queue'},{id:16,name:'Hash Tables'},{id:17,name:'Hash Functions'},{id:18,name:'Collision Handling'},{id:19,name:'Heap'},{id:20,name:'Min Heap'},{id:21,name:'Max Heap'},{id:22,name:'Heapify Operation'},{id:23,name:'Binary Tree'},{id:24,name:'Binary Tree Traversals'},{id:25,name:'Binary Search Tree'},{id:26,name:'AVL Tree'},{id:27,name:'Red-Black Tree'},{id:28,name:'Trie'},{id:29,name:'Segment Tree'},{id:30,name:'Fenwick Tree'},{id:31,name:'Graph Representation'},{id:32,name:'Breadth First Search'},{id:33,name:'Depth First Search'},{id:34,name:'Topological Sort'},{id:35,name:'Dijkstra’s Algorithm'},{id:36,name:'Bellman-Ford Algorithm'},{id:37,name:'Minimum Spanning Tree'},{id:38,name:'Union-Find'},{id:39,name:'Floyd-Warshall Algorithm'},{id:40,name:'Strongly Connected Components'}
 ];
 
-// Populate dropdown
 (function initConceptDropdown(){
-  const input = document.querySelector("[name='concept_id']");
-  if (!input) return;
-  const select = document.createElement('select');
-  select.name = 'concept_id';
-  select.className = input.className;
-  CONCEPTS.forEach(c=>{
+  const select = document.getElementById("concept_id");
+  if (!select) return;
+  CONCEPTS.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
     opt.textContent = `${c.id} - ${c.name}`;
     select.appendChild(opt);
   });
-  input.replaceWith(select);
 })();
 
 function buildPayloadFromForm() {
   const formData = new FormData(els.form);
-
   const payload = {
     concept_id: asInt(formData.get('concept_id'), null),
     duration_weeks: asInt(formData.get('duration_weeks'), 6),
@@ -203,28 +214,13 @@ function buildPayloadFromForm() {
     daily_hours: asFloat(formData.get('daily_hours'), 2),
     days_per_week: asInt(formData.get('days_per_week'), 5)
   };
-
   return { payload };
 }
 
 async function postGenerateRoadmap(payload) {
   const headers = { "Content-Type": "application/json" };
-
-  const res = await fetch("/api/generate-roadmap", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload)
-  });
-
-  if (!res.ok) {
-    let detail = "";
-    try {
-      const text = await res.text();
-      detail = text ? ` (${text.slice(0, 280)})` : "";
-    } catch {}
-    throw new Error(`Request failed: ${res.status}${detail}`);
-  }
-
+  const res = await fetch("/api/generate-roadmap", { method: "POST", headers, body: JSON.stringify(payload) });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return await res.json();
 }
 
@@ -233,28 +229,28 @@ function showSuggestions(suggestions) {
   els.suggestionsList.innerHTML = "";
 
   for (const s of lastSuggestions) {
-    const row = document.createElement("div");
-    row.className = "suggestion-item";
+    const row = document.createElement("label");
+    row.className = "flex items-center justify-between p-4 bg-slate-900/80 border border-slate-700/80 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors shadow-inner";
 
     const left = document.createElement("div");
-    left.className = "suggestion-left";
+    left.className = "flex items-center gap-4";
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.className = "checkbox";
+    cb.className = "w-5 h-5 accent-primary-500 bg-slate-800 border-slate-600 rounded cursor-pointer";
     cb.value = String(s.id);
     cb.checked = true;
     cb.dataset.conceptId = String(s.id);
 
     const title = document.createElement("div");
-    title.className = "suggestion-title";
+    title.className = "flex flex-col";
 
-    const name = document.createElement("div");
-    name.className = "suggestion-name";
+    const name = document.createElement("span");
+    name.className = "font-semibold text-sm text-white";
     name.textContent = s.name ?? `Concept ${s.id}`;
 
-    const level = document.createElement("div");
-    level.className = "suggestion-level";
+    const level = document.createElement("span");
+    level.className = "text-xs text-slate-400 mt-0.5";
     level.textContent = `Level: ${s.level ?? "-"}`;
 
     title.appendChild(name);
@@ -289,55 +285,44 @@ function clearOutputs() {
 
 function renderRoadmap(result) {
   const roadmap = Array.isArray(result?.roadmap) ? result.roadmap : [];
-  const total = asInt(result?.total_concepts, 0);
-
-  els.conceptCount.textContent = `${total} concepts`;
+  els.conceptCount.textContent = `${asInt(result?.total_concepts, 0)} concepts`;
   els.roadmap.innerHTML = "";
   els.cyContainer.classList.add("hidden");
   els.roadmap.classList.remove("hidden");
-  els.viewToggleBtn.textContent = "Show Graph View";
+  els.viewToggleBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Show Graph View`;
 
-  // Trigger new graph render
-  if (result.graph_data) {
-    renderGraph(result.graph_data);
-  }
+  if (result.graph_data) renderGraph(result.graph_data);
 
   for (const w of roadmap) {
     const weekEl = document.createElement("div");
-    weekEl.className = "week";
+    weekEl.className = "bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden mb-6 shadow-sm";
 
     const summary = document.createElement("div");
-    summary.className = "week-summary";
+    summary.className = "flex items-center justify-between px-5 py-4 bg-slate-900/80 border-b border-slate-800/80";
 
     const title = document.createElement("div");
-    title.className = "week-title";
+    title.className = "flex flex-col gap-1";
 
-    const weekNum = asInt(w.week, 0);
     const strong = document.createElement("strong");
-    strong.textContent = `Week ${weekNum || ""}`.trim();
+    strong.className = "text-sm text-white font-semibold tracking-wide uppercase";
+    strong.textContent = `Week ${asInt(w.week, 0)}`;
 
-    const meta = document.createElement("div");
-    meta.className = "week-meta";
+    const meta = document.createElement("span");
+    meta.className = "text-xs text-slate-400";
     meta.textContent = `Planned study time: ${formatMinutes(w.total_time)}`;
 
     title.appendChild(strong);
     title.appendChild(meta);
-
     summary.appendChild(title);
 
     const body = document.createElement("div");
-    body.className = "week-body";
+    body.className = "p-5 flex flex-col gap-3";
 
     const concepts = Array.isArray(w.concepts) ? w.concepts : [];
     if (concepts.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "week-meta";
-      empty.textContent = "No concepts scheduled this week.";
-      body.appendChild(empty);
+      body.innerHTML = `<div class="text-xs text-slate-500 italic">No concepts scheduled this week.</div>`;
     } else {
-      for (const c of concepts) {
-        body.appendChild(renderConcept(c));
-      }
+      for (const c of concepts) body.appendChild(renderConcept(c));
     }
 
     weekEl.appendChild(summary);
@@ -350,58 +335,56 @@ function renderRoadmap(result) {
 
 function renderConcept(c) {
   const conceptEl = document.createElement("div");
-  conceptEl.className = "concept";
-  // NEW: Add ID for the Graph anchor and completion updates
   conceptEl.id = "concept-card-" + c.concept_id;
+  conceptEl.className = "p-4 bg-slate-900/80 border border-slate-700/50 rounded-xl transition-all hover:border-slate-600 hover:shadow-md hover:shadow-blue-900/10";
 
   const header = document.createElement("button");
   header.type = "button";
-  header.className = "concept-header";
+  header.className = "concept-header w-full flex items-center justify-between text-left focus:outline-none group";
 
   const headerLeft = document.createElement("div");
-  headerLeft.className = "concept-header-left";
+  headerLeft.className = "flex flex-col gap-1.5";
 
   const name = document.createElement("div");
-  name.className = "concept-name";
+  name.className = "concept-name font-semibold text-sm text-slate-100 flex items-center flex-wrap gap-2";
   
-  const phaseName = c.is_pivoted ? `${c.phase ?? "Other"} + Applied Project` : (c.phase ?? "Other");
-  name.textContent = `${c.concept ?? "Concept"} (${phaseName})`;
+  const phaseName = c.is_pivoted ? `${c.phase ?? "Other"} + Project` : (c.phase ?? "Other");
+  name.textContent = `${c.concept ?? "Concept"}`;
 
-  // Re-apply passed badge if rendering after state update (e.g., toggles)
+  const phaseTag = document.createElement("span");
+  phaseTag.className = "text-[10px] px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-800/80 uppercase tracking-wider font-medium ml-2";
+  phaseTag.textContent = phaseName;
+  name.appendChild(phaseTag);
+
   if (completedConcepts.has(Number(c.concept_id))) {
     const badge = document.createElement("span");
-    badge.className = "completed-badge";
-    badge.textContent = "✅ Passed";
+    badge.className = "completed-badge bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ml-2 shadow-inner";
+    badge.textContent = "✓ Passed";
     name.appendChild(badge);
   }
 
   const meta = document.createElement("div");
-  meta.className = "concept-meta";
-
-  const base = c.allocated_base_time ?? 0;
-  const buffer = c.allocated_buffer_time ?? 0;
-  const total = c.allocated_time ?? (base + buffer);
-
-  meta.textContent = `Level ${c.level ?? "-"} • Study ${formatMinutes(base)} • Buffer ${formatMinutes(buffer)} • Total ${formatMinutes(total)}${c.is_split ? " • split" : ""}`;
+  meta.className = "text-xs text-slate-400";
+  meta.innerHTML = `Lvl ${c.level ?? "-"} &bull; Study ${formatMinutes(c.allocated_base_time)} &bull; Buffer ${formatMinutes(c.allocated_buffer_time)} &bull; Total ${formatMinutes(c.allocated_time)}${c.is_split ? " <span class='text-orange-400 font-medium'>&bull; Split</span>" : ""}`;
 
   headerLeft.appendChild(name);
   headerLeft.appendChild(meta);
 
   const caret = document.createElement("div");
-  caret.className = "concept-caret";
-  caret.textContent = "▸";
+  caret.className = "text-slate-500 transition-transform duration-200 group-hover:text-white";
+  caret.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
 
   header.appendChild(headerLeft);
   header.appendChild(caret);
 
   const details = document.createElement("div");
-  details.className = "details hidden";
+  details.className = "details-wrapper hidden mt-4 pt-4 border-t border-slate-700/50 text-sm text-slate-300 leading-relaxed fade-in";
   details.appendChild(renderDetails(c));
 
   header.addEventListener("click", () => {
     const isHidden = details.classList.contains("hidden");
     details.classList.toggle("hidden", !isHidden);
-    caret.textContent = isHidden ? "▾" : "▸";
+    caret.style.transform = isHidden ? "rotate(180deg)" : "rotate(0deg)";
   });
 
   conceptEl.appendChild(header);
@@ -411,110 +394,103 @@ function renderConcept(c) {
 
 function renderDetails(c) {
   const wrap = document.createElement("div");
+  wrap.className = "flex flex-col gap-5";
 
-  // 1. Highlight the pivot (Application Module)
   if (c.is_pivoted) {
-    const h = document.createElement("h4");
-    h.textContent = "🚀 Advanced Application Module";
-    h.style.color = "#2f7cf6";
-    const p = document.createElement("p");
-    p.textContent = `You have an extra ${formatMinutes(c.application_surplus)} for this topic! Stop consuming theory and use this time to build a mini-project or solve 3-5 advanced LeetCode problems to solidify your mastery.`;
-    wrap.appendChild(h);
-    wrap.appendChild(p);
+    const alert = document.createElement("div");
+    alert.className = "bg-primary-500/10 border border-primary-500/20 rounded-lg p-4 shadow-inner";
+    alert.innerHTML = `<h4 class="text-primary-400 font-bold text-xs uppercase tracking-wider mb-1 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Application Module</h4><p class="text-sm text-primary-200">Extra ${formatMinutes(c.application_surplus)} allocated! Build a mini-project or solve advanced LeetCode problems to solidify mastery.</p>`;
+    wrap.appendChild(alert);
   }
 
-  // Helper for text sections
   const addSection = (title, text) => {
     if (!text) return;
-    const h = document.createElement("h4");
-    h.textContent = title;
-    const p = document.createElement("p");
-    p.textContent = String(text);
-    wrap.appendChild(h);
-    wrap.appendChild(p);
+    const block = document.createElement("div");
+    block.innerHTML = `<h4 class="text-white font-semibold mb-1.5 text-sm">${title}</h4><p class="text-slate-400 text-sm leading-relaxed">${String(text)}</p>`;
+    wrap.appendChild(block);
   };
 
-  // 2. Core Educational Content
   addSection("Explanation", c.explanation);
   addSection("Example", c.example);
   addSection("Summary", c.summary);
 
-  // 3. Key Points (Safely handle JSON strings or Arrays)
   if (c.key_points) {
-    const h = document.createElement("h4");
-    h.textContent = "Key Points";
-    wrap.appendChild(h);
-
+    const block = document.createElement("div");
+    block.innerHTML = `<h4 class="text-white font-semibold mb-2 text-sm">Key Points</h4>`;
+    
     let items = [];
-    if (Array.isArray(c.key_points)) {
-      items = c.key_points;
-    } else {
-      try {
-        const parsed = JSON.parse(c.key_points);
-        items = Array.isArray(parsed) ? parsed : String(c.key_points).split("\n");
-      } catch {
-        items = String(c.key_points).split("\n");
-      }
-    }
+    try {
+      const parsed = JSON.parse(c.key_points);
+      items = Array.isArray(parsed) ? parsed : String(c.key_points).split("\n");
+    } catch { items = String(c.key_points).split("\n"); }
 
     const ul = document.createElement("ul");
+    ul.className = "list-disc list-inside text-slate-400 space-y-1.5 marker:text-slate-600";
     for (const item of items.map(x => String(x).trim()).filter(Boolean)) {
       const li = document.createElement("li");
       li.textContent = item;
       ul.appendChild(li);
     }
-    wrap.appendChild(ul);
+    block.appendChild(ul);
+    wrap.appendChild(block);
   }
 
-  // 4. Resources
+  // --- UPDATED RESOURCES BLOCK WITH YOUTUBE DETECTION ---
   const resources = Array.isArray(c.resources) ? c.resources : [];
   if (resources.length) {
-    const h = document.createElement("h4");
-    h.textContent = "Resources";
-    wrap.appendChild(h);
+    const block = document.createElement("div");
+    block.innerHTML = `<h4 class="text-white font-semibold mb-2 text-sm">Resources</h4>`;
+    const flex = document.createElement("div");
+    flex.className = "flex flex-wrap gap-2";
+    
+    const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
 
-    const ul = document.createElement("ul");
     for (const r of resources) {
-      const li = document.createElement("li");
       const a = document.createElement("a");
-      a.href = r.url;
-      a.target = "_blank";
-      a.rel = "noreferrer";
-      a.textContent = `${r.content_type ?? "link"}: ${r.url}`;
-      li.appendChild(a);
-      ul.appendChild(li);
+      a.className = "inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-md transition-colors border border-slate-700 shadow-sm cursor-pointer";
+      
+      const ytMatch = r.url.match(ytRegex);
+      
+      if (ytMatch && ytMatch[1]) {
+        a.innerHTML = `<svg class="w-3.5 h-3.5 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg> Watch Video`;
+        a.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const videoId = ytMatch[1];
+          els.ytIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+          els.ytModal.classList.remove("hidden");
+          els.ytModal.classList.add("flex");
+        };
+      } else {
+        a.href = r.url;
+        a.target = "_blank";
+        a.innerHTML = `<svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg> ${r.content_type ?? "Read Article"}`;
+      }
+      
+      flex.appendChild(a);
     }
-    wrap.appendChild(ul);
+    block.appendChild(flex);
+    wrap.appendChild(block);
   }
 
-  // 5. Quiz Logic (With safe JSON parsing)
   let quizData = c.mcq_quiz;
   if (typeof quizData === 'string') {
-    try {
-      quizData = JSON.parse(quizData);
-    } catch (err) {
-      console.error("Failed to parse quiz data", err);
-    }
+    try { quizData = JSON.parse(quizData); } catch (err) {}
   }
 
-  // Inject the Take Quiz button if quiz data exists and is a valid array
   if (quizData && Array.isArray(quizData) && quizData.length > 0) {
     const quizBtn = document.createElement("button");
-    quizBtn.className = "btn btn-primary mt-3";
-    quizBtn.textContent = "Take Quiz";
+    quizBtn.className = "mt-4 w-full bg-primary-600 text-white hover:bg-primary-500 py-2.5 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-500/20";
+    quizBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Assess Knowledge`;
     quizBtn.addEventListener("click", (e) => {
-      e.stopPropagation(); // Prevent closing the accordion
-      openQuiz(c.concept_id, c.concept, quizData); // Pass the ID and safely parsed array
+      e.stopPropagation(); 
+      openQuiz(c.concept_id, c.concept, quizData); 
     });
     wrap.appendChild(quizBtn);
   }
 
   return wrap;
 }
-
-// ==========================================
-// QUIZ LOGIC
-// ==========================================
 
 function shuffleArray(arr) {
   const newArr = [...arr];
@@ -527,69 +503,54 @@ function shuffleArray(arr) {
 
 function mapQuizData(originalData, shouldShuffle) {
   let mapped = originalData.map(q => {
-    // Map options to objects so we don't lose the "correct" flag when shuffling
     let opts = q.options.map((optText, index) => ({
       text: optText,
       isCorrect: index === q.correct_index
     }));
-    
-    if (shouldShuffle) {
-      opts = shuffleArray(opts);
-    }
-
-    return {
-      question: q.question,
-      options: opts,
-      explanation: q.explanation
-    };
+    if (shouldShuffle) opts = shuffleArray(opts);
+    return { question: q.question, options: opts, explanation: q.explanation };
   });
-
-  if (shouldShuffle) {
-    mapped = shuffleArray(mapped);
-  }
-
+  if (shouldShuffle) mapped = shuffleArray(mapped);
   return mapped;
 }
 
 function openQuiz(conceptId, title, mcqData) {
-  activeQuizConceptId = conceptId; // Save it to state
+  activeQuizConceptId = conceptId; 
   activeQuizOriginalData = mcqData;
   els.quizTitle.textContent = `${title} Quiz`;
-  
-  // Start fresh (no shuffle on first attempt)
   startQuizFlow(false);
   els.quizModal.classList.remove("hidden");
+  els.quizModal.classList.add("flex");
 }
 
 function startQuizFlow(shouldShuffle) {
   activeQuizQuestions = mapQuizData(activeQuizOriginalData, shouldShuffle);
   activeQuizAnswers = new Array(activeQuizQuestions.length).fill(null);
   
-  // Reset UI
   els.quizScoreMsg.classList.add("hidden");
   els.quizScoreMsg.textContent = "";
-  els.quizScoreMsg.className = "quiz-score-msg hidden";
+  els.quizScoreMsg.className = "font-medium text-sm hidden";
   
   els.submitQuizBtn.classList.remove("hidden");
   els.retakeQuizBtn.classList.add("hidden");
-
   els.quizBody.innerHTML = "";
 
   activeQuizQuestions.forEach((q, qIndex) => {
     const qDiv = document.createElement("div");
-    qDiv.className = "quiz-q";
+    qDiv.className = "flex flex-col gap-3";
 
     const h4 = document.createElement("h4");
+    h4.className = "text-slate-100 font-semibold text-base";
     h4.textContent = `${qIndex + 1}. ${q.question}`;
     qDiv.appendChild(h4);
 
     const optsDiv = document.createElement("div");
-    optsDiv.className = "quiz-opts";
+    optsDiv.className = "flex flex-col gap-2";
     optsDiv.dataset.qIndex = qIndex;
 
     q.options.forEach((opt, oIndex) => {
       const optBtn = document.createElement("button");
-      optBtn.className = "quiz-opt";
+      optBtn.className = "quiz-opt w-full text-left p-3.5 rounded-lg border border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-800 hover:border-slate-600 transition-all text-sm shadow-sm";
       optBtn.textContent = opt.text;
       optBtn.dataset.oIndex = oIndex;
 
@@ -599,11 +560,10 @@ function startQuizFlow(shouldShuffle) {
 
     qDiv.appendChild(optsDiv);
 
-    // Placeholder for explanation
     const expDiv = document.createElement("div");
-    expDiv.className = "quiz-exp hidden";
+    expDiv.className = "hidden mt-2 p-4 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 text-sm leading-relaxed fade-in shadow-inner";
     expDiv.id = `quiz-exp-${qIndex}`;
-    expDiv.textContent = `Explanation: ${q.explanation}`;
+    expDiv.innerHTML = `<strong class="text-white block mb-1">Explanation:</strong>${q.explanation}`;
     qDiv.appendChild(expDiv);
 
     els.quizBody.appendChild(qDiv);
@@ -612,174 +572,126 @@ function startQuizFlow(shouldShuffle) {
 
 function handleOptionSelect(qIndex, oIndex) {
   activeQuizAnswers[qIndex] = oIndex;
-  
   const optsDiv = els.quizBody.querySelector(`[data-q-index="${qIndex}"]`);
   const buttons = optsDiv.querySelectorAll(".quiz-opt");
   
-  buttons.forEach(btn => btn.classList.remove("selected"));
-  buttons[oIndex].classList.add("selected");
+  buttons.forEach(btn => {
+    btn.classList.remove("border-primary-500", "bg-primary-500/10", "text-white", "ring-1", "ring-primary-500");
+    btn.classList.add("border-slate-700", "bg-slate-800/40", "text-slate-300");
+  });
+  
+  const selected = buttons[oIndex];
+  selected.classList.remove("border-slate-700", "bg-slate-800/40", "text-slate-300");
+  selected.classList.add("border-primary-500", "bg-primary-500/10", "text-white", "ring-1", "ring-primary-500");
 }
 
 els.submitQuizBtn.addEventListener("click", () => {
-  if (activeQuizAnswers.includes(null)) {
-    alert("Please answer all questions before submitting.");
-    return;
-  }
+  if (activeQuizAnswers.includes(null)) return alert("Please answer all questions before submitting.");
 
   let score = 0;
-  
   activeQuizQuestions.forEach((q, qIndex) => {
     const selectedOIndex = activeQuizAnswers[qIndex];
     const optsDiv = els.quizBody.querySelector(`[data-q-index="${qIndex}"]`);
     const buttons = optsDiv.querySelectorAll(".quiz-opt");
 
-    buttons.forEach(btn => btn.classList.add("disabled")); // lock inputs
+    buttons.forEach(btn => btn.disabled = true); 
 
     const isCorrect = q.options[selectedOIndex].isCorrect;
     if (isCorrect) {
       score++;
-      buttons[selectedOIndex].classList.add("correct");
+      buttons[selectedOIndex].className = "w-full text-left p-3.5 rounded-lg border border-green-500/50 bg-green-500/10 text-green-400 text-sm font-semibold shadow-sm ring-1 ring-green-500/50";
     } else {
-      buttons[selectedOIndex].classList.add("wrong");
-      // Highlight the correct one
+      buttons[selectedOIndex].className = "w-full text-left p-3.5 rounded-lg border border-red-500/50 bg-red-500/10 text-red-400 text-sm shadow-sm";
       const correctIdx = q.options.findIndex(o => o.isCorrect);
-      buttons[correctIdx].classList.add("correct");
+      buttons[correctIdx].className = "w-full text-left p-3.5 rounded-lg border border-green-500/50 bg-green-500/10 text-green-400 text-sm font-semibold shadow-sm ring-1 ring-green-500/50 mt-2";
     }
 
-    // Show Explanation
     const expDiv = document.getElementById(`quiz-exp-${qIndex}`);
     expDiv.classList.remove("hidden");
-    expDiv.classList.add("show");
   });
 
-  // Handle Score Display
   els.submitQuizBtn.classList.add("hidden");
   els.quizScoreMsg.classList.remove("hidden");
   
-  const threshold = Math.ceil(activeQuizQuestions.length * 0.66); // 2 out of 3
+  const threshold = Math.ceil(activeQuizQuestions.length * 0.66);
 
   if (score >= threshold) {
-    els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length} 🎉 Excellent!`;
-    els.quizScoreMsg.classList.add("pass");
-
-    // NEW: Mark Concept as Completed
+    els.quizScoreMsg.innerHTML = `<span class="text-green-400 font-bold">Score: ${score}/${activeQuizQuestions.length}</span> — Mastered!`;
     completedConcepts.add(activeQuizConceptId);
 
-    // 1. Update the List View (Add Green Badge)
     const listCard = document.getElementById("concept-card-" + activeQuizConceptId);
     if (listCard) {
       const nameEl = listCard.querySelector(".concept-name");
       if (!nameEl.querySelector(".completed-badge")) {
         const badge = document.createElement("span");
-        badge.className = "completed-badge";
-        badge.textContent = "✅ Passed";
+        badge.className = "completed-badge bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ml-2 shadow-inner fade-in";
+        badge.textContent = "✓ Passed";
         nameEl.appendChild(badge);
       }
     }
 
-    // 2. Update the Graph View (Add Checkmark + Dim Opacity)
     if (typeof cyInstance !== 'undefined' && cyInstance) {
       const node = cyInstance.$('#' + activeQuizConceptId);
       if (node && node.length > 0) {
         node.data('completed', true);
-        node.style('opacity', 0.5); // Dim it to show it's "done"
+        node.style('opacity', 0.35);
       }
     }
-
   } else {
-    els.quizScoreMsg.textContent = `Score: ${score} / ${activeQuizQuestions.length}. Let's review the material and try again.`;
-    els.quizScoreMsg.classList.add("fail");
+    els.quizScoreMsg.innerHTML = `<span class="text-red-400 font-bold">Score: ${score}/${activeQuizQuestions.length}</span> — Needs Review.`;
     els.retakeQuizBtn.classList.remove("hidden");
   }
 });
 
-els.retakeQuizBtn.addEventListener("click", () => {
-  startQuizFlow(true); // Shuffle on retake
-});
-
+els.retakeQuizBtn.addEventListener("click", () => startQuizFlow(true));
 els.closeQuizBtn.addEventListener("click", () => {
   els.quizModal.classList.add("hidden");
+  els.quizModal.classList.remove("flex");
 });
-
-// ==========================================
-// CORE GENERATION
-// ==========================================
 
 async function runInitialGenerate() {
   clearOutputs();
   setStatus("");
-
   const { payload } = buildPayloadFromForm();
-  if (!payload.concept_id) {
-    setStatus("Please enter a valid Target Concept ID.", { error: true });
-    return;
-  }
-
+  if (!payload.concept_id) return setStatus("Valid Target Concept ID required.", { error: true });
+  
   lastPayload = { payload };
-
   setBusy(true);
-  setStatus("Generating…");
 
   try {
     const result = await postGenerateRoadmap(payload);
-
     if (result?.status === "UNREALISTIC") {
       setStatus(result.message, { error: true });
       els.roadmapSection.classList.add("hidden");
       return;
     }
-
-    if (result?.needs_suggestions) {
-      setStatus("");
-      showSuggestions(result.suggestions || []);
-      return;
-    }
-
-    setStatus("");
+    if (result?.needs_suggestions) return showSuggestions(result.suggestions || []);
     renderRoadmap(result);
   } catch (err) {
-    setStatus(err?.message || "Something went wrong.", { error: true });
-  } finally {
-    setBusy(false);
-  }
+    setStatus(err?.message || "Generation failed.", { error: true });
+  } finally { setBusy(false); }
 }
 
 async function runWithAccepted(accepted_concepts) {
   const { payload } = buildPayloadFromForm();
-  
   const nextPayload = { ...payload, accepted_concepts };
-
   setBusy(true);
-  setStatus("Generating…");
+
   try {
     const result = await postGenerateRoadmap(nextPayload);
-
     if (result?.status === "UNREALISTIC") {
       setStatus(result.message, { error: true });
       els.roadmapSection.classList.add("hidden");
       return;
     }
-
     setStatus("");
     els.suggestionsSection.classList.add("hidden"); 
     renderRoadmap(result);
   } catch (err) {
-    setStatus(err?.message || "Something went wrong.", { error: true });
-  } finally {
-    setBusy(false);
-  }
+    setStatus(err?.message || "Generation failed.", { error: true });
+  } finally { setBusy(false); }
 }
 
-els.form.addEventListener("submit", e => {
-  e.preventDefault();
-  runInitialGenerate();
-});
-
-els.generateSelectedBtn.addEventListener("click", () => {
-  const ids = getSelectedSuggestionIds();
-  runWithAccepted(ids);
-});
-
-els.skipContinueBtn.addEventListener("click", () => {
-  runWithAccepted([]);
-});
+els.form.addEventListener("submit", e => { e.preventDefault(); runInitialGenerate(); });
+els.generateSelectedBtn.addEventListener("click", () => runWithAccepted(getSelectedSuggestionIds()));
+els.skipContinueBtn.addEventListener("click", () => runWithAccepted([]));

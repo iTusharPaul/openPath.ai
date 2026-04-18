@@ -1,142 +1,181 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Learning Roadmap Generator</title>
+    <title>SmartOpenPath | Roadmap Generator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+            colors: {
+              background: '#020617', /* slate-950 */
+              panel: '#0f172a',      /* slate-900 */
+              border: '#1e293b',     /* slate-800 */
+              primary: { 500: '#3b82f6', 600: '#2563eb' }
+            }
+          }
+        }
+      }
+    </script>
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
   </head>
-  <body>
-    <div class="bg-grid" aria-hidden="true"></div>
+  <body class="bg-gradient-to-br from-slate-950 via-[#0a192f] to-slate-950 text-slate-200 font-sans antialiased min-h-screen selection:bg-primary-500 selection:text-white pb-20">
+    
+    <div class="fixed inset-0 pointer-events-none opacity-[0.06]" style="background-image: linear-gradient(to right, #3b82f6 1px, transparent 1px), linear-gradient(to bottom, #3b82f6 1px, transparent 1px); background-size: 4rem 4rem; mask-image: radial-gradient(circle at center, black, transparent 80%);"></div>
 
-    <main class="container">
-      <header class="page-header">
-        <h1>Learning Roadmap Generator</h1>
-        <p class="subhead">Enter your goal and constraints; get a personalized plan.</p>
+    <main class="relative z-10 max-w-4xl mx-auto px-6 pt-16">
+      
+      <header class="mb-12 text-center">
+        <div class="inline-flex items-center justify-center p-2 bg-slate-900 border border-slate-700/50 rounded-2xl mb-4 shadow-lg shadow-blue-900/20">
+          <svg class="w-6 h-6 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        </div>
+        <h1 class="text-4xl md:text-5xl font-bold tracking-tight text-white mb-3">Learning Roadmap Generator</h1>
+        <p class="text-slate-400 text-lg">Enter your constraints. Generate a highly optimized, dynamically structured path.</p>
       </header>
 
-      <section class="card" aria-label="Inputs">
-        <div class="card-header">
-          <h2>Inputs</h2>
+      <section class="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl shadow-blue-900/10 overflow-hidden mb-8" aria-label="Inputs">
+        <div class="px-6 py-5 border-b border-slate-800 bg-slate-900/80">
+          <h2 class="text-lg font-semibold text-white">Generation Parameters</h2>
         </div>
 
-        <form id="roadmap-form" class="form">
-          <div class="grid">
-            <div class="field">
-              <label for="concept_id">Target Concept ID</label>
-              <input id="concept_id" name="concept_id" placeholder="e.g., 42" inputmode="numeric" required />
+        <form id="roadmap-form" class="p-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            
+            <div class="flex flex-col gap-2">
+              <label for="concept_id" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Target Concept</label>
+              <select id="concept_id" name="concept_id" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner">
+                <option value="" disabled selected>Select a concept...</option>
+                </select>
             </div>
 
-            <div class="field">
-              <label for="experience_level">Experience Level</label>
-              <select id="experience_level" name="experience_level" required>
+            <div class="flex flex-col gap-2">
+              <label for="experience_level" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Experience Level</label>
+              <select id="experience_level" name="experience_level" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner appearance-none">
                 <option value="beginner">Beginner</option>
                 <option value="intermediate" selected>Intermediate</option>
                 <option value="advanced">Advanced</option>
               </select>
             </div>
 
-            <div class="field">
-              <label for="language">Implementation language</label>
-              <input id="language" name="language" placeholder="e.g., javascript, python" />
+            <div class="flex flex-col gap-2">
+              <label for="language" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Language Focus</label>
+              <input id="language" name="language" placeholder="e.g., javascript, python" class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner" />
             </div>
 
-            <div class="field">
-              <label for="duration_weeks">Duration (weeks)</label>
-              <input
-                id="duration_weeks"
-                name="duration_weeks"
-                type="number"
-                min="1"
-                step="1"
-                value="6"
-                required
-              />
+            <div class="flex flex-col gap-2">
+              <label for="duration_weeks" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Duration (Weeks)</label>
+              <input id="duration_weeks" name="duration_weeks" type="number" min="1" step="1" value="6" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner" />
             </div>
 
-            <div class="field">
-              <label for="daily_hours">Daily Hours</label>
-              <input id="daily_hours" name="daily_hours" type="number" min="0.5" step="0.5" value="2" required />
+            <div class="flex flex-col gap-2">
+              <label for="daily_hours" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Daily Hours</label>
+              <input id="daily_hours" name="daily_hours" type="number" min="0.5" step="0.5" value="2" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner" />
             </div>
 
-            <div class="field">
-              <label for="days_per_week">Days / Week</label>
-              <input id="days_per_week" name="days_per_week" type="number" min="1" max="7" step="1" value="5" required />
+            <div class="flex flex-col gap-2">
+              <label for="days_per_week" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Days / Week</label>
+              <input id="days_per_week" name="days_per_week" type="number" min="1" max="7" step="1" value="5" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-inner" />
             </div>
           </div>
 
-          <div class="actions">
-            <button id="generate-btn" type="submit" class="btn btn-primary">Generate Roadmap</button>
-            <div id="status" class="status" role="status" aria-live="polite"></div>
+          <div class="mt-8 flex items-center gap-4">
+            <button id="generate-btn" type="submit" class="bg-primary-600 text-white hover:bg-primary-500 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all shadow-lg shadow-primary-500/25 active:scale-95 flex items-center gap-2 border border-primary-500/50">
+              Generate Roadmap
+            </button>
+            <div id="status" class="text-sm font-medium text-slate-400" role="status" aria-live="polite"></div>
           </div>
         </form>
       </section>
 
-      <section id="suggestions-section" class="card hidden" aria-label="Suggested Prerequisites">
-        <div class="card-header">
-          <h2>Suggested Prerequisites</h2>
-          <p class="card-subhead">Select prerequisites you are willing to include, then continue.</p>
+      <section id="suggestions-section" class="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-xl shadow-blue-900/10 overflow-hidden mb-8 hidden fade-in" aria-label="Suggested Prerequisites">
+        <div class="px-6 py-5 border-b border-slate-800 bg-slate-900/80">
+          <h2 class="text-lg font-semibold text-white">Suggested Prerequisites</h2>
+          <p class="text-sm text-slate-400 mt-1">Select the foundational concepts you wish to include.</p>
         </div>
-
-        <div id="suggestions-list" class="suggestions"></div>
-
-        <div class="actions actions-split">
-          <button id="generate-selected" class="btn btn-primary">Generate with Selected</button>
-          <button id="skip-continue" class="btn btn-secondary">Skip and Continue</button>
+        <div class="p-6">
+          <div id="suggestions-list" class="flex flex-col gap-3 mb-6"></div>
+          <div class="flex items-center gap-3">
+            <button id="generate-selected" class="bg-primary-600 text-white hover:bg-primary-500 px-5 py-2.5 rounded-lg font-medium text-sm transition-all shadow-lg shadow-primary-500/25 active:scale-95 border border-primary-500/50">Generate with Selected</button>
+            <button id="skip-continue" class="bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 px-5 py-2.5 rounded-lg font-medium text-sm transition-all border border-slate-700 active:scale-95 shadow-sm">Skip and Continue</button>
+          </div>
         </div>
       </section>
 
-     <section id="roadmap-section" class="card hidden" aria-label="Generated Roadmap">
-        <div class="card-header row-between">
-          <div>
-            <h2>Generated Roadmap</h2>
-          </div>
-          <div class="row-between" style="gap: 12px;">
-            <button id="view-toggle-btn" type="button" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">Show Graph View</button>
-            <div id="concept-count" class="pill">0 concepts</div>
+      <section id="roadmap-section" class="bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-xl shadow-blue-900/10 overflow-hidden hidden fade-in" aria-label="Generated Roadmap">
+        <div class="px-6 py-5 border-b border-slate-800 bg-slate-900/80 flex justify-between items-center flex-wrap gap-4">
+          <h2 class="text-lg font-semibold text-white">Your Dynamic Roadmap</h2>
+          <div class="flex items-center gap-3">
+            <button id="view-toggle-btn" type="button" class="bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 px-4 py-2 rounded-lg text-xs font-medium transition-all border border-slate-700 flex items-center gap-2 shadow-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+              Show Graph View
+            </button>
+            <div id="concept-count" class="text-xs px-3 py-1.5 bg-slate-950 text-slate-400 rounded-full border border-slate-800 shadow-inner">0 concepts</div>
           </div>
         </div>
 
-        <div id="cy-container" class="hidden" style="position: relative; height: 500px; width: 100%; border-radius: 12px; background: rgba(5, 8, 14, 0.8); border: 1px solid var(--border); margin-bottom: 16px; overflow: hidden;">
-          
-          <div id="graph-legend" class="graph-legend">
-            <h4>Visual Legend</h4>
-            <div class="legend-item"><span class="legend-color" style="background: #4ade80;"></span> Foundations (Lvl 1)</div>
-            <div class="legend-item"><span class="legend-color" style="background: #60a5fa;"></span> Linear Data (Lvl 2)</div>
-            <div class="legend-item"><span class="legend-color" style="background: #c084fc;"></span> Hashing/Heaps (Lvl 3)</div>
-            <div class="legend-item"><span class="legend-color" style="background: #fb923c;"></span> Trees (Lvl 4)</div>
-            <div class="legend-item"><span class="legend-color" style="background: #f87171;"></span> Graphs (Lvl 5)</div>
-            <hr class="legend-divider">
-            <div class="legend-item">🔵 Larger Node = Core/Linchpin Topic</div>
-            <div class="legend-item">⭕ White Border = High Mental Friction</div>
-            <div class="legend-item">✅ Checkmark = Quiz Passed</div>
+        <div class="p-6">
+          <div id="cy-container" class="hidden relative h-[calc(100vh-14rem)] min-h-[500px] w-full rounded-xl bg-slate-950/80 border border-slate-800/80 mb-6 overflow-hidden shadow-inner">
+            <div id="graph-legend" class="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur border border-slate-700 p-4 rounded-xl text-xs text-slate-300 shadow-2xl shadow-black/50 pointer-events-none">
+              <h4 class="font-bold text-white mb-3 uppercase tracking-wider text-[10px]">Graph Legend</h4>
+              <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]"></span> Lvl 1 (Foundations)</div>
+              <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-blue-200"></span> Lvl 2 (Linear)</div>
+              <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-blue-400"></span> Lvl 3 (Hashing/Heaps)</div>
+              <div class="flex items-center gap-2 mb-2"><span class="w-3 h-3 rounded-full bg-blue-600"></span> Lvl 4 (Trees)</div>
+              <div class="flex items-center gap-2 mb-3"><span class="w-3 h-3 rounded-full bg-blue-800 border border-blue-600"></span> Lvl 5 (Graphs)</div>
+              <div class="h-px bg-slate-700 w-full mb-3"></div>
+              <div class="mb-1">🔵 Large = Core/Linchpin</div>
+              <div class="mb-1">⭕ White Outline = High Friction</div>
+              <div>✅ Check = Quiz Passed</div>
+            </div>
           </div>
 
+          <div id="roadmap" class="flex flex-col gap-6"></div>
         </div>
-
-        <div id="roadmap" class="roadmap"></div>
       </section>
+
     </main>
 
-    <div id="quiz-modal" class="modal hidden" aria-label="Quiz Modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 id="quiz-title">Concept Quiz</h2>
-          <button id="close-quiz-btn" class="icon-btn">&times;</button>
+    <div id="yt-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md hidden justify-center items-center z-[60] p-4 fade-in" aria-label="Video Modal">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl shadow-2xl shadow-blue-900/20 overflow-hidden flex flex-col">
+        <div class="px-4 py-3 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+          <h2 class="font-semibold text-white text-sm flex items-center gap-2">
+            <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+            Resource Viewer
+          </h2>
+          <button id="close-yt-btn" class="text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 rounded-full p-1">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
         </div>
-        <div id="quiz-body" class="quiz-body">
+        <div class="relative w-full pb-[56.25%] bg-black">
+          <iframe id="yt-iframe" class="absolute top-0 left-0 w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+
+    <div id="quiz-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden justify-center items-center z-50 p-4 fade-in" aria-label="Quiz Modal">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl shadow-blue-900/20">
+        <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-900 rounded-t-2xl">
+          <h2 id="quiz-title" class="font-semibold text-white">Concept Quiz</h2>
+          <button id="close-quiz-btn" class="text-slate-400 hover:text-white transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+        <div id="quiz-body" class="p-6 overflow-y-auto flex-1 flex flex-col gap-8 custom-scrollbar"></div>
+        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900 flex justify-between items-center rounded-b-2xl">
+          <div id="quiz-score-msg" class="font-medium text-sm hidden"></div>
+          <div class="flex gap-3">
+            <button id="retake-quiz-btn" class="hidden bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white px-5 py-2.5 rounded-lg font-medium text-sm border border-slate-700 transition-all shadow-sm">Retake Quiz</button>
+            <button id="submit-quiz-btn" class="bg-primary-600 text-white hover:bg-primary-500 px-6 py-2.5 rounded-lg font-semibold text-sm transition-all shadow-lg shadow-primary-500/25 active:scale-95 border border-primary-500/50">Submit Answers</button>
           </div>
-        <div class="modal-footer">
-          <div id="quiz-score-msg" class="quiz-score-msg hidden"></div>
-          <button id="submit-quiz-btn" class="btn btn-primary">Submit Quiz</button>
-          <button id="retake-quiz-btn" class="btn btn-secondary hidden">Retake Quiz</button>
         </div>
       </div>
     </div>
