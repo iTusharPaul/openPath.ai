@@ -6,7 +6,7 @@ const { Pool } = require("pg");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY2);
 
 // 2. Initialize PostgreSQL Pool
-const pool = require("../db/db");
+const { pool } = require("../db/db");
 
 /**
  * Calls Gemini to extract technical terms and forces a JSON response.

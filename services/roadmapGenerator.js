@@ -1,4 +1,4 @@
-const pool = require("../db/db");
+const { pool } = require("../db/db");
 
 const {
   calculateGlossaryLoad,
@@ -66,7 +66,48 @@ function topoSort(concepts, edges) {
   return topoIndex;
 }
 
-async function generateRoadmap(userInput) {
+async function persistRoadmapForUser(userId, userInput, result) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM roadmaps WHERE user_id = $1", [userId]);
+    await client.query(
+      `INSERT INTO roadmaps (user_id, input_payload, result_payload)
+       VALUES ($1, $2::jsonb, $3::jsonb)`,
+      [userId, JSON.stringify(userInput), JSON.stringify(result)]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getLatestRoadmapForUser(userId) {
+  const result = await pool.query(
+    `SELECT input_payload, result_payload, created_at
+     FROM roadmaps
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId]
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return {
+    ...result.rows[0].result_payload,
+    saved_at: result.rows[0].created_at,
+    input_payload: result.rows[0].input_payload
+  };
+}
+
+async function generateRoadmap(userInput, options = {}) {
   const {
     concept_id,
     duration_weeks,
@@ -280,13 +321,18 @@ async function generateRoadmap(userInput) {
     }))
   };
 
-  // UPDATED RETURN: Include graph_data
-  return {
+  const roadmapResult = {
     needs_suggestions: false,
     total_concepts: roadmapConcepts.length,
     roadmap: weeklyPlan,
     graph_data: graphData
   };
+
+  if (options.userId) {
+    await persistRoadmapForUser(options.userId, userInput, roadmapResult);
+  }
+
+  return roadmapResult;
 }
 
-module.exports = { generateRoadmap };
+module.exports = { generateRoadmap, getLatestRoadmapForUser };

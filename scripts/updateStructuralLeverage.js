@@ -1,5 +1,5 @@
 require("dotenv").config();
-const pool = require("../db/db");
+const { pool } = require("../db/db");
 
 async function updateSLI() {
   console.log("Calculating Structural Leverage Index...");

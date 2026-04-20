@@ -1,5 +1,5 @@
 require("dotenv").config();
-const pool = require("../db/db");
+const { pool } = require("../db/db");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
