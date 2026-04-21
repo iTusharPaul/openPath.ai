@@ -66,32 +66,112 @@ function topoSort(concepts, edges) {
   return topoIndex;
 }
 
-async function persistRoadmapForUser(userId, userInput, result) {
-  const client = await pool.connect();
+function sanitizeRoadmapName(rawName) {
+  const value = String(rawName || "").trim();
+  if (!value) return "Untitled Roadmap";
+  return value.slice(0, 120);
+}
 
-  try {
-    await client.query("BEGIN");
-    await client.query("DELETE FROM roadmaps WHERE user_id = $1", [userId]);
-    await client.query(
-      `INSERT INTO roadmaps (user_id, input_payload, result_payload)
-       VALUES ($1, $2::jsonb, $3::jsonb)`,
-      [userId, JSON.stringify(userInput), JSON.stringify(result)]
-    );
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
+function normalizeCompletedConcepts(progressPayload) {
+  const ids = Array.isArray(progressPayload?.completed_concepts)
+    ? progressPayload.completed_concepts
+    : [];
+
+  return [...new Set(
+    ids
+      .map((id) => Number.parseInt(id, 10))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  )];
+}
+
+function mapRoadmapRow(row) {
+  const completedConcepts = normalizeCompletedConcepts(row.progress_payload);
+  return {
+    roadmap_id: row.id,
+    roadmap_name: row.roadmap_name,
+    ...row.result_payload,
+    saved_at: row.created_at,
+    input_payload: row.input_payload,
+    progress_payload: { completed_concepts: completedConcepts }
+  };
+}
+
+function buildRoadmapSummaryFromRow(row) {
+  const roadmapWeeks = Array.isArray(row.result_payload?.roadmap) ? row.result_payload.roadmap : [];
+  let scheduledWeeks = 0;
+  let assignedConcepts = 0;
+
+  for (const week of roadmapWeeks) {
+    const concepts = Array.isArray(week?.concepts) ? week.concepts : [];
+    const eligibleConcepts = new Set();
+
+    for (const concept of concepts) {
+      const conceptId = Number.parseInt(concept?.concept_id, 10);
+      const allocated = Number(concept?.allocated_time || 0);
+      const base = Number(concept?.allocated_base_time || 0);
+      const buffer = Number(concept?.allocated_buffer_time || 0);
+      const total = Math.max(allocated, base + buffer);
+      if (Number.isFinite(conceptId) && conceptId > 0 && total > 0) {
+        eligibleConcepts.add(conceptId);
+      }
+    }
+
+    if (eligibleConcepts.size > 0) {
+      scheduledWeeks += 1;
+      assignedConcepts += eligibleConcepts.size;
+    }
   }
+
+  const completedConcepts = normalizeCompletedConcepts(row.progress_payload);
+  const completedCount = completedConcepts.filter((id) => {
+    return roadmapWeeks.some((week) => {
+      const concepts = Array.isArray(week?.concepts) ? week.concepts : [];
+      return concepts.some((concept) => {
+        const conceptId = Number.parseInt(concept?.concept_id, 10);
+        const allocated = Number(concept?.allocated_time || 0);
+        const base = Number(concept?.allocated_base_time || 0);
+        const buffer = Number(concept?.allocated_buffer_time || 0);
+        const total = Math.max(allocated, base + buffer);
+        return conceptId === id && total > 0;
+      });
+    });
+  }).length;
+
+  const completionPercent = assignedConcepts > 0
+    ? Math.round((completedCount / assignedConcepts) * 100)
+    : 0;
+
+  return {
+    roadmap_id: row.id,
+    roadmap_name: row.roadmap_name,
+    saved_at: row.created_at,
+    total_concepts: Number.parseInt(row.result_payload?.total_concepts || 0, 10) || 0,
+    scheduled_weeks: scheduledWeeks,
+    completion: {
+      completed_concepts: completedCount,
+      total_concepts: assignedConcepts,
+      percent: completionPercent
+    }
+  };
+}
+
+async function persistRoadmapForUser(userId, roadmapName, userInput, result) {
+  const insertResult = await pool.query(
+    `INSERT INTO roadmaps (user_id, roadmap_name, input_payload, result_payload, progress_payload)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, '{"completed_concepts": []}'::jsonb)
+     RETURNING id, roadmap_name, input_payload, result_payload, progress_payload, created_at`,
+    [userId, sanitizeRoadmapName(roadmapName), JSON.stringify(userInput), JSON.stringify(result)]
+  );
+
+  return mapRoadmapRow(insertResult.rows[0]);
 }
 
 async function getLatestRoadmapForUser(userId) {
   const result = await pool.query(
-    `SELECT input_payload, result_payload, created_at
+    `SELECT id, roadmap_name, input_payload, result_payload, progress_payload, created_at
      FROM roadmaps
      WHERE user_id = $1
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT 1`,
     [userId]
   );
@@ -100,11 +180,57 @@ async function getLatestRoadmapForUser(userId) {
     return null;
   }
 
-  return {
-    ...result.rows[0].result_payload,
-    saved_at: result.rows[0].created_at,
-    input_payload: result.rows[0].input_payload
-  };
+  return mapRoadmapRow(result.rows[0]);
+}
+
+async function listRoadmapsForUser(userId) {
+  const result = await pool.query(
+    `SELECT id, roadmap_name, input_payload, result_payload, progress_payload, created_at
+     FROM roadmaps
+     WHERE user_id = $1
+     ORDER BY created_at DESC, id DESC`,
+    [userId]
+  );
+
+  return result.rows.map(buildRoadmapSummaryFromRow);
+}
+
+async function getRoadmapForUser(userId, roadmapId) {
+  const id = Number.parseInt(roadmapId, 10);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const result = await pool.query(
+    `SELECT id, roadmap_name, input_payload, result_payload, progress_payload, created_at
+     FROM roadmaps
+     WHERE user_id = $1 AND id = $2
+     LIMIT 1`,
+    [userId, id]
+  );
+
+  if (result.rowCount === 0) return null;
+  return mapRoadmapRow(result.rows[0]);
+}
+
+async function updateRoadmapProgressForUser(userId, roadmapId, completedConceptIds) {
+  const id = Number.parseInt(roadmapId, 10);
+  if (!Number.isFinite(id) || id <= 0) return null;
+
+  const normalized = [...new Set(
+    (Array.isArray(completedConceptIds) ? completedConceptIds : [])
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isFinite(value) && value > 0)
+  )];
+
+  const result = await pool.query(
+    `UPDATE roadmaps
+     SET progress_payload = jsonb_build_object('completed_concepts', $3::int[])
+     WHERE user_id = $1 AND id = $2
+     RETURNING id, roadmap_name, input_payload, result_payload, progress_payload, created_at`,
+    [userId, id, normalized]
+  );
+
+  if (result.rowCount === 0) return null;
+  return mapRoadmapRow(result.rows[0]);
 }
 
 async function generateRoadmap(userInput, options = {}) {
@@ -115,7 +241,8 @@ async function generateRoadmap(userInput, options = {}) {
     experience_level,
     accepted_concepts,
     daily_hours,
-    days_per_week
+    days_per_week,
+    roadmap_name
   } = userInput;
 
   // --------------------------------------------------
@@ -329,10 +456,25 @@ async function generateRoadmap(userInput, options = {}) {
   };
 
   if (options.userId) {
-    await persistRoadmapForUser(options.userId, userInput, roadmapResult);
+    const savedRoadmap = await persistRoadmapForUser(
+      options.userId,
+      roadmap_name,
+      userInput,
+      roadmapResult
+    );
+    roadmapResult.roadmap_id = savedRoadmap.roadmap_id;
+    roadmapResult.roadmap_name = savedRoadmap.roadmap_name;
+    roadmapResult.saved_at = savedRoadmap.saved_at;
+    roadmapResult.progress_payload = savedRoadmap.progress_payload;
   }
 
   return roadmapResult;
 }
 
-module.exports = { generateRoadmap, getLatestRoadmapForUser };
+module.exports = {
+  generateRoadmap,
+  getLatestRoadmapForUser,
+  listRoadmapsForUser,
+  getRoadmapForUser,
+  updateRoadmapProgressForUser
+};

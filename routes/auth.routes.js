@@ -5,7 +5,7 @@ const rateLimit = require("express-rate-limit");
 
 const { pool } = require("../db/db");
 const { requireAuth } = require("../middleware/auth");
-const { getLatestRoadmapForUser } = require("../services/roadmapGenerator");
+const { getLatestRoadmapForUser, listRoadmapsForUser } = require("../services/roadmapGenerator");
 
 const router = express.Router();
 
@@ -119,12 +119,16 @@ router.post("/login", authLimiter, async (req, res) => {
     }
 
     const token = createToken(user);
-    const roadmap = await getLatestRoadmapForUser(user.id);
+    const [roadmap, roadmaps] = await Promise.all([
+      getLatestRoadmapForUser(user.id),
+      listRoadmapsForUser(user.id)
+    ]);
 
     res.json({
       user: { id: user.id, name: user.name, email: user.email },
       token,
-      roadmap
+      roadmap,
+      roadmaps
     });
   } catch (error) {
     console.error(error);
@@ -134,11 +138,15 @@ router.post("/login", authLimiter, async (req, res) => {
 
 router.get("/me", requireAuth, async (req, res) => {
   try {
-    const roadmap = await getLatestRoadmapForUser(req.user.id);
+    const [roadmap, roadmaps] = await Promise.all([
+      getLatestRoadmapForUser(req.user.id),
+      listRoadmapsForUser(req.user.id)
+    ]);
 
     res.json({
       user: req.user,
-      roadmap
+      roadmap,
+      roadmaps
     });
   } catch (error) {
     console.error(error);

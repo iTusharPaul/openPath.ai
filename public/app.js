@@ -20,8 +20,14 @@ const els = {
   suggestionsList: document.getElementById("suggestions-list"),
   generateSelectedBtn: document.getElementById("generate-selected"),
   skipContinueBtn: document.getElementById("skip-continue"),
+  roadmapsSection: document.getElementById("roadmaps-section"),
+  roadmapsList: document.getElementById("roadmaps-list"),
+  roadmapLibraryCount: document.getElementById("roadmap-library-count"),
   roadmapSection: document.getElementById("roadmap-section"),
   roadmap: document.getElementById("roadmap"),
+  roadmapNameInput: document.getElementById("roadmap_name"),
+  activeRoadmapName: document.getElementById("active-roadmap-name"),
+  roadmapProgress: document.getElementById("roadmap-progress"),
   conceptCount: document.getElementById("concept-count"),
   
   quizModal: document.getElementById("quiz-modal"),
@@ -45,12 +51,82 @@ let currentUser = null;
 let authMode = "login";
 let lastPayload = null;
 let lastSuggestions = [];
+let activeRoadmapId = null;
+let currentRoadmaps = [];
 
 let activeQuizOriginalData = null;
 let activeQuizQuestions = [];
 let activeQuizAnswers = [];
 let activeQuizConceptId = null; 
 let completedConcepts = new Set(); 
+let activeRoadmapData = null;
+
+function normalizeCompletedConceptIds(ids) {
+  return [...new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((id) => Number.parseInt(id, 10))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  )];
+}
+
+function getConceptAllocatedMinutes(concept) {
+  const allocated = Number(concept?.allocated_time || 0);
+  const base = Number(concept?.allocated_base_time || 0);
+  const buffer = Number(concept?.allocated_buffer_time || 0);
+  return Math.max(allocated, base + buffer, 0);
+}
+
+function getRoadmapCompletionMeta(result, completedSetInput) {
+  const completedSet = completedSetInput instanceof Set
+    ? completedSetInput
+    : new Set(normalizeCompletedConceptIds(completedSetInput));
+
+  const weeks = Array.isArray(result?.roadmap) ? result.roadmap : [];
+  let totalEligibleConcepts = 0;
+  let totalCompletedConcepts = 0;
+  const weekStats = new Map();
+
+  for (const week of weeks) {
+    const concepts = Array.isArray(week?.concepts) ? week.concepts : [];
+    const eligibleConceptIds = [];
+
+    for (const concept of concepts) {
+      const conceptId = Number.parseInt(concept?.concept_id, 10);
+      if (!Number.isFinite(conceptId) || conceptId <= 0) continue;
+      if (getConceptAllocatedMinutes(concept) <= 0) continue;
+      if (!eligibleConceptIds.includes(conceptId)) {
+        eligibleConceptIds.push(conceptId);
+      }
+    }
+
+    const completedCount = eligibleConceptIds.filter((id) => completedSet.has(id)).length;
+    const totalCount = eligibleConceptIds.length;
+    const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    weekStats.set(Number(week?.week), {
+      eligible: totalCount > 0,
+      completedCount,
+      totalCount,
+      percent
+    });
+
+    if (totalCount > 0) {
+      totalEligibleConcepts += totalCount;
+      totalCompletedConcepts += completedCount;
+    }
+  }
+
+  const percent = totalEligibleConcepts > 0
+    ? Math.round((totalCompletedConcepts / totalEligibleConcepts) * 100)
+    : 0;
+
+  return {
+    completedCount: totalCompletedConcepts,
+    totalCount: totalEligibleConcepts,
+    percent,
+    weekStats
+  };
+}
 
 // Close YT Modal Logic
 els.closeYtBtn.addEventListener("click", () => {
@@ -158,6 +234,7 @@ function setAuthenticatedView(isAuthenticated) {
   const generatorSections = [
     els.form?.closest("section"),
     els.suggestionsSection,
+    els.roadmapsSection,
     els.roadmapSection
   ].filter(Boolean);
 
@@ -177,6 +254,12 @@ function setAuthenticatedView(isAuthenticated) {
 function clearSession() {
   setAuthToken("");
   currentUser = null;
+  activeRoadmapId = null;
+  activeRoadmapData = null;
+  currentRoadmaps = [];
+  completedConcepts = new Set();
+  if (els.roadmapsList) els.roadmapsList.innerHTML = "";
+  if (els.roadmapLibraryCount) els.roadmapLibraryCount.textContent = "0 roadmaps";
   updateAuthUi();
   setAuthenticatedView(false);
 }
@@ -307,7 +390,7 @@ function renderGraph(graphData) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
       const details = card.querySelector('.details-wrapper');
       if (details.classList.contains('hidden')) {
-        card.querySelector('.concept-header').click();
+        card.querySelector('.concept-header button')?.click();
       }
     }
   });
@@ -331,6 +414,7 @@ const CONCEPTS = [
 function buildPayloadFromForm() {
   const formData = new FormData(els.form);
   const payload = {
+    roadmap_name: String(formData.get('roadmap_name') || '').trim() || 'Untitled Roadmap',
     concept_id: asInt(formData.get('concept_id'), null),
     duration_weeks: asInt(formData.get('duration_weeks'), 6),
     language: String(formData.get('language') || 'general').trim() || 'general',
@@ -346,6 +430,106 @@ async function postGenerateRoadmap(payload) {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+function getRoadmapName(roadmap) {
+  return String(roadmap?.roadmap_name || "Untitled Roadmap").trim() || "Untitled Roadmap";
+}
+
+function applyRoadmapsState(roadmaps) {
+  currentRoadmaps = Array.isArray(roadmaps) ? roadmaps : [];
+  renderRoadmapLibrary();
+}
+
+function renderRoadmapLibrary() {
+  if (!els.roadmapsList || !els.roadmapLibraryCount) return;
+
+  const count = currentRoadmaps.length;
+  els.roadmapLibraryCount.textContent = `${count} roadmap${count === 1 ? "" : "s"}`;
+  els.roadmapsList.innerHTML = "";
+
+  if (count === 0) {
+    els.roadmapsList.innerHTML = `<div class="col-span-full text-sm text-slate-400 border border-dashed border-slate-700 rounded-xl px-4 py-5 bg-slate-900/50">No roadmaps yet. Create one above using a custom roadmap name.</div>`;
+    return;
+  }
+
+  for (const roadmap of currentRoadmaps) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const isActive = Number(roadmap.roadmap_id) === Number(activeRoadmapId);
+    btn.className = `text-left p-4 rounded-xl border transition-all shadow-sm ${isActive
+      ? "border-primary-500/70 bg-primary-500/10"
+      : "border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/70 hover:border-slate-600"}`;
+
+    const savedAt = roadmap?.saved_at ? new Date(roadmap.saved_at) : null;
+    const savedText = savedAt && !Number.isNaN(savedAt.getTime())
+      ? savedAt.toLocaleString()
+      : "Unknown time";
+
+    const completionPercent = Number(roadmap?.completion?.percent || 0);
+    const completed = Number(roadmap?.completion?.completed_concepts || 0);
+    const total = Number(roadmap?.completion?.total_concepts || 0);
+
+    btn.innerHTML = `
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-white truncate">${getRoadmapName(roadmap)}</p>
+          <p class="text-xs text-slate-400 mt-1">Saved: ${savedText}</p>
+        </div>
+        <span class="text-[11px] px-2 py-1 rounded border ${isActive
+          ? "border-primary-400/60 text-primary-200 bg-primary-500/10"
+          : "border-slate-700 text-slate-300 bg-slate-950/70"}">${completionPercent}%</span>
+      </div>
+      <p class="text-xs text-slate-400 mt-3">Progress: ${completed}/${total} assigned concepts</p>
+    `;
+
+    btn.addEventListener("click", () => {
+      selectRoadmap(roadmap.roadmap_id);
+    });
+
+    els.roadmapsList.appendChild(btn);
+  }
+}
+
+async function refreshRoadmapsListOnly() {
+  if (!authToken) return;
+  const result = await fetchJson("/api/roadmaps", { method: "GET" });
+  applyRoadmapsState(result.roadmaps || []);
+}
+
+async function selectRoadmap(roadmapId) {
+  const id = Number.parseInt(roadmapId, 10);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  try {
+    const result = await fetchJson(`/api/roadmaps/${id}`, { method: "GET" });
+    const roadmap = result?.roadmap;
+    if (!roadmap) return;
+
+    activeRoadmapId = Number(roadmap.roadmap_id);
+    completedConcepts = new Set(normalizeCompletedConceptIds(roadmap?.progress_payload?.completed_concepts));
+    activeRoadmapData = roadmap;
+    renderRoadmap(roadmap);
+    renderRoadmapLibrary();
+  } catch (err) {
+    setStatus(err?.message || "Failed to load roadmap.", { error: true });
+  }
+}
+
+async function saveRoadmapProgress() {
+  if (!authToken || !activeRoadmapId) return;
+
+  const completed = normalizeCompletedConceptIds(Array.from(completedConcepts));
+  const result = await fetchJson(`/api/roadmaps/${activeRoadmapId}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify({ completed_concepts: completed })
+  });
+
+  if (result?.roadmap) {
+    activeRoadmapData = result.roadmap;
+    completedConcepts = new Set(normalizeCompletedConceptIds(result.roadmap?.progress_payload?.completed_concepts));
+    await refreshRoadmapsListOnly();
+  }
 }
 
 function showSuggestions(suggestions) {
@@ -404,12 +588,37 @@ function clearOutputs() {
   els.roadmapSection.classList.add("hidden");
   els.suggestionsList.innerHTML = "";
   els.roadmap.innerHTML = "";
+  activeRoadmapData = null;
   els.conceptCount.textContent = "0 concepts";
+  if (els.activeRoadmapName) {
+    els.activeRoadmapName.textContent = "Untitled Roadmap";
+  }
+  if (els.roadmapProgress) {
+    els.roadmapProgress.textContent = "0% complete";
+  }
 }
 
 function renderRoadmap(result) {
+  activeRoadmapData = result || null;
+  if (result?.roadmap_id) {
+    activeRoadmapId = Number(result.roadmap_id);
+  }
+
+  if (result?.progress_payload?.completed_concepts) {
+    completedConcepts = new Set(normalizeCompletedConceptIds(result.progress_payload.completed_concepts));
+  }
+
   const roadmap = Array.isArray(result?.roadmap) ? result.roadmap : [];
   els.conceptCount.textContent = `${asInt(result?.total_concepts, 0)} concepts`;
+  if (els.activeRoadmapName) {
+    els.activeRoadmapName.textContent = getRoadmapName(result);
+  }
+
+  const completionMeta = getRoadmapCompletionMeta(result, completedConcepts);
+  if (els.roadmapProgress) {
+    els.roadmapProgress.textContent = `${completionMeta.percent}% complete (${completionMeta.completedCount}/${completionMeta.totalCount})`;
+  }
+
   els.roadmap.innerHTML = "";
   els.cyContainer.classList.add("hidden");
   els.roadmap.classList.remove("hidden");
@@ -433,7 +642,13 @@ function renderRoadmap(result) {
 
     const meta = document.createElement("span");
     meta.className = "text-xs text-slate-400";
-    meta.textContent = `Planned study time: ${formatMinutes(w.total_time)}`;
+
+    const weekStat = completionMeta.weekStats.get(Number(w.week));
+    if (weekStat?.eligible) {
+      meta.textContent = `Planned study time: ${formatMinutes(w.total_time)} • Completion: ${weekStat.percent}% (${weekStat.completedCount}/${weekStat.totalCount})`;
+    } else {
+      meta.textContent = `Planned study time: ${formatMinutes(w.total_time)} • Completion: Not counted (no assigned content/time)`;
+    }
 
     title.appendChild(strong);
     title.appendChild(meta);
@@ -458,16 +673,33 @@ function renderRoadmap(result) {
 }
 
 function renderConcept(c) {
+  const conceptId = Number(c.concept_id);
+  const isCompleted = completedConcepts.has(conceptId);
+
   const conceptEl = document.createElement("div");
   conceptEl.id = "concept-card-" + c.concept_id;
   conceptEl.className = "p-4 bg-slate-900/80 border border-slate-700/50 rounded-xl transition-all hover:border-slate-600 hover:shadow-md hover:shadow-blue-900/10";
 
-  const header = document.createElement("button");
-  header.type = "button";
-  header.className = "concept-header w-full flex items-center justify-between text-left focus:outline-none group";
+  const header = document.createElement("div");
+  header.className = "concept-header w-full flex items-start justify-between gap-3 text-left group";
+
+  const completionWrap = document.createElement("label");
+  completionWrap.className = "mt-0.5 inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none";
+
+  const completionInput = document.createElement("input");
+  completionInput.type = "checkbox";
+  completionInput.className = "w-4 h-4 accent-emerald-500 rounded bg-slate-800 border-slate-600 cursor-pointer";
+  completionInput.checked = isCompleted;
+  completionInput.dataset.conceptId = String(conceptId);
+
+  const completionText = document.createElement("span");
+  completionText.textContent = "Done";
+
+  completionWrap.appendChild(completionInput);
+  completionWrap.appendChild(completionText);
 
   const headerLeft = document.createElement("div");
-  headerLeft.className = "flex flex-col gap-1.5";
+  headerLeft.className = "flex flex-col gap-1.5 flex-1 min-w-0";
 
   const name = document.createElement("div");
   name.className = "concept-name font-semibold text-sm text-slate-100 flex items-center flex-wrap gap-2";
@@ -480,10 +712,10 @@ function renderConcept(c) {
   phaseTag.textContent = phaseName;
   name.appendChild(phaseTag);
 
-  if (completedConcepts.has(Number(c.concept_id))) {
+  if (isCompleted) {
     const badge = document.createElement("span");
-    badge.className = "completed-badge bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ml-2 shadow-inner";
-    badge.textContent = "✓ Passed";
+    badge.className = "completed-badge bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ml-2 shadow-inner";
+    badge.textContent = "✓ Completed";
     name.appendChild(badge);
   }
 
@@ -494,21 +726,63 @@ function renderConcept(c) {
   headerLeft.appendChild(name);
   headerLeft.appendChild(meta);
 
-  const caret = document.createElement("div");
+  const toggleDetailsBtn = document.createElement("button");
+  toggleDetailsBtn.type = "button";
+  toggleDetailsBtn.className = "inline-flex items-center gap-2 text-slate-400 hover:text-white text-xs px-2.5 py-1.5 rounded-md border border-slate-700 bg-slate-900/80 transition-colors";
+
+  const caret = document.createElement("span");
   caret.className = "text-slate-500 transition-transform duration-200 group-hover:text-white";
   caret.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+  const detailsText = document.createElement("span");
+  detailsText.textContent = "Details";
+  toggleDetailsBtn.appendChild(detailsText);
+  toggleDetailsBtn.appendChild(caret);
 
+  header.appendChild(completionWrap);
   header.appendChild(headerLeft);
-  header.appendChild(caret);
+  header.appendChild(toggleDetailsBtn);
 
   const details = document.createElement("div");
   details.className = "details-wrapper hidden mt-4 pt-4 border-t border-slate-700/50 text-sm text-slate-300 leading-relaxed fade-in";
   details.appendChild(renderDetails(c));
 
-  header.addEventListener("click", () => {
+  toggleDetailsBtn.addEventListener("click", () => {
     const isHidden = details.classList.contains("hidden");
     details.classList.toggle("hidden", !isHidden);
     caret.style.transform = isHidden ? "rotate(180deg)" : "rotate(0deg)";
+  });
+
+  completionInput.addEventListener("change", async () => {
+    const conceptKey = Number.parseInt(completionInput.dataset.conceptId, 10);
+    if (!Number.isFinite(conceptKey) || conceptKey <= 0) return;
+
+    if (completionInput.checked) {
+      completedConcepts.add(conceptKey);
+    } else {
+      completedConcepts.delete(conceptKey);
+    }
+
+    try {
+      await saveRoadmapProgress();
+      if (activeRoadmapData) {
+        renderRoadmap(activeRoadmapData);
+      }
+      if (cyInstance) {
+        const node = cyInstance.$('#' + conceptKey);
+        if (node && node.length > 0) {
+          node.data('completed', completionInput.checked);
+          node.style('opacity', completionInput.checked ? 0.35 : 1);
+        }
+      }
+    } catch (err) {
+      completionInput.checked = !completionInput.checked;
+      if (completionInput.checked) {
+        completedConcepts.add(conceptKey);
+      } else {
+        completedConcepts.delete(conceptKey);
+      }
+      setStatus(err?.message || "Failed to save concept progress.", { error: true });
+    }
   });
 
   conceptEl.appendChild(header);
@@ -581,7 +855,8 @@ function renderDetails(c) {
           e.preventDefault();
           e.stopPropagation();
           const videoId = ytMatch[1];
-          els.ytIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+          const origin = encodeURIComponent(window.location.origin);
+          els.ytIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&origin=${origin}`;
           els.ytModal.classList.remove("hidden");
           els.ytModal.classList.add("flex");
         };
@@ -709,7 +984,7 @@ function handleOptionSelect(qIndex, oIndex) {
   selected.classList.add("border-primary-500", "bg-primary-500/10", "text-white", "ring-1", "ring-primary-500");
 }
 
-els.submitQuizBtn.addEventListener("click", () => {
+els.submitQuizBtn.addEventListener("click", async () => {
   if (activeQuizAnswers.includes(null)) return alert("Please answer all questions before submitting.");
 
   let score = 0;
@@ -742,24 +1017,20 @@ els.submitQuizBtn.addEventListener("click", () => {
   if (score >= threshold) {
     els.quizScoreMsg.innerHTML = `<span class="text-green-400 font-bold">Score: ${score}/${activeQuizQuestions.length}</span> — Mastered!`;
     completedConcepts.add(activeQuizConceptId);
-
-    const listCard = document.getElementById("concept-card-" + activeQuizConceptId);
-    if (listCard) {
-      const nameEl = listCard.querySelector(".concept-name");
-      if (!nameEl.querySelector(".completed-badge")) {
-        const badge = document.createElement("span");
-        badge.className = "completed-badge bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ml-2 shadow-inner fade-in";
-        badge.textContent = "✓ Passed";
-        nameEl.appendChild(badge);
+    try {
+      await saveRoadmapProgress();
+      if (activeRoadmapData) {
+        renderRoadmap(activeRoadmapData);
       }
-    }
-
-    if (typeof cyInstance !== 'undefined' && cyInstance) {
-      const node = cyInstance.$('#' + activeQuizConceptId);
-      if (node && node.length > 0) {
-        node.data('completed', true);
-        node.style('opacity', 0.35);
+      if (typeof cyInstance !== 'undefined' && cyInstance) {
+        const node = cyInstance.$('#' + activeQuizConceptId);
+        if (node && node.length > 0) {
+          node.data('completed', true);
+          node.style('opacity', 0.35);
+        }
       }
+    } catch (err) {
+      setStatus(err?.message || "Failed to save quiz completion.", { error: true });
     }
   } else {
     els.quizScoreMsg.innerHTML = `<span class="text-red-400 font-bold">Score: ${score}/${activeQuizQuestions.length}</span> — Needs Review.`;
@@ -796,7 +1067,13 @@ async function runInitialGenerate() {
       return;
     }
     if (result?.needs_suggestions) return showSuggestions(result.suggestions || []);
+
+    activeRoadmapId = Number(result?.roadmap_id || activeRoadmapId || 0) || null;
+    completedConcepts = new Set(normalizeCompletedConceptIds(result?.progress_payload?.completed_concepts));
     renderRoadmap(result);
+    await refreshRoadmapsListOnly();
+    renderRoadmapLibrary();
+    setStatus("Roadmap saved.");
   } catch (err) {
     if (err?.status === 401) {
       clearSession();
@@ -821,7 +1098,13 @@ async function runWithAccepted(accepted_concepts) {
     }
     setStatus("");
     els.suggestionsSection.classList.add("hidden"); 
+
+    activeRoadmapId = Number(result?.roadmap_id || activeRoadmapId || 0) || null;
+    completedConcepts = new Set(normalizeCompletedConceptIds(result?.progress_payload?.completed_concepts));
     renderRoadmap(result);
+    await refreshRoadmapsListOnly();
+    renderRoadmapLibrary();
+    setStatus("Roadmap saved.");
   } catch (err) {
     if (err?.status === 401) {
       clearSession();
@@ -866,7 +1149,10 @@ async function submitAuth(mode) {
     setAuthStatus(`Signed in as ${result.user.name}.`);
 
     clearOutputs();
+    applyRoadmapsState(result.roadmaps || []);
     if (result.roadmap) {
+      activeRoadmapId = Number(result.roadmap.roadmap_id || 0) || null;
+      completedConcepts = new Set(normalizeCompletedConceptIds(result.roadmap?.progress_payload?.completed_concepts));
       renderRoadmap(result.roadmap);
     }
   } catch (err) {
@@ -889,7 +1175,10 @@ async function restoreSession() {
     updateAuthUi();
     setAuthenticatedView(true);
     clearOutputs();
+    applyRoadmapsState(result.roadmaps || []);
     if (result.roadmap) {
+      activeRoadmapId = Number(result.roadmap.roadmap_id || 0) || null;
+      completedConcepts = new Set(normalizeCompletedConceptIds(result.roadmap?.progress_payload?.completed_concepts));
       renderRoadmap(result.roadmap);
     }
     setAuthStatus("");
