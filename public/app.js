@@ -23,6 +23,12 @@ const els = {
   roadmapsSection: document.getElementById("roadmaps-section"),
   roadmapsList: document.getElementById("roadmaps-list"),
   roadmapLibraryCount: document.getElementById("roadmap-library-count"),
+  sidebarToggleBtn: document.getElementById("sidebar-toggle-btn"),
+  sidebarToggleOpenIcon: document.getElementById("sidebar-toggle-open-icon"),
+  sidebarToggleCloseIcon: document.getElementById("sidebar-toggle-close-icon"),
+  roadmapSidebar: document.getElementById("roadmap-sidebar"),
+  roadmapSidebarContent: document.getElementById("roadmap-sidebar-content"),
+  workspaceLayout: document.getElementById("workspace-layout"),
   roadmapSection: document.getElementById("roadmap-section"),
   roadmap: document.getElementById("roadmap"),
   roadmapNameInput: document.getElementById("roadmap_name"),
@@ -60,6 +66,22 @@ let activeQuizAnswers = [];
 let activeQuizConceptId = null; 
 let completedConcepts = new Set(); 
 let activeRoadmapData = null;
+let isSidebarOpen = true;
+
+function setSidebarState(open) {
+  if (!els.roadmapSidebar || !els.workspaceLayout || !els.sidebarToggleBtn) return;
+
+  isSidebarOpen = Boolean(open);
+  els.workspaceLayout.classList.toggle("lg:grid-cols-[320px_1fr]", isSidebarOpen);
+  els.workspaceLayout.classList.toggle("lg:grid-cols-[72px_1fr]", !isSidebarOpen);
+  els.roadmapSidebar.classList.toggle("lg:w-[320px]", isSidebarOpen);
+  els.roadmapSidebar.classList.toggle("lg:w-[72px]", !isSidebarOpen);
+  els.roadmapSidebarContent?.classList.toggle("hidden", !isSidebarOpen);
+  els.sidebarToggleBtn.setAttribute("aria-expanded", isSidebarOpen ? "true" : "false");
+  els.sidebarToggleBtn.setAttribute("title", isSidebarOpen ? "Collapse sidebar" : "Expand sidebar");
+  els.sidebarToggleOpenIcon?.classList.toggle("hidden", isSidebarOpen);
+  els.sidebarToggleCloseIcon?.classList.toggle("hidden", !isSidebarOpen);
+}
 
 function normalizeCompletedConceptIds(ids) {
   return [...new Set(
@@ -454,10 +476,9 @@ function renderRoadmapLibrary() {
   }
 
   for (const roadmap of currentRoadmaps) {
-    const btn = document.createElement("button");
-    btn.type = "button";
+    const card = document.createElement("div");
     const isActive = Number(roadmap.roadmap_id) === Number(activeRoadmapId);
-    btn.className = `text-left p-4 rounded-xl border transition-all shadow-sm ${isActive
+    card.className = `p-4 rounded-xl border transition-all shadow-sm ${isActive
       ? "border-primary-500/70 bg-primary-500/10"
       : "border-slate-700/70 bg-slate-900/70 hover:bg-slate-800/70 hover:border-slate-600"}`;
 
@@ -470,24 +491,53 @@ function renderRoadmapLibrary() {
     const completed = Number(roadmap?.completion?.completed_concepts || 0);
     const total = Number(roadmap?.completion?.total_concepts || 0);
 
-    btn.innerHTML = `
+    card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-white truncate">${getRoadmapName(roadmap)}</p>
           <p class="text-xs text-slate-400 mt-1">Saved: ${savedText}</p>
         </div>
-        <span class="text-[11px] px-2 py-1 rounded border ${isActive
-          ? "border-primary-400/60 text-primary-200 bg-primary-500/10"
-          : "border-slate-700 text-slate-300 bg-slate-950/70"}">${completionPercent}%</span>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] px-2 py-1 rounded border ${isActive
+            ? "border-primary-400/60 text-primary-200 bg-primary-500/10"
+            : "border-slate-700 text-slate-300 bg-slate-950/70"}">${completionPercent}%</span>
+          <button type="button" data-delete-roadmap="${roadmap.roadmap_id}" class="delete-roadmap-btn text-[11px] px-2 py-1 rounded border border-rose-800/80 bg-rose-950/40 text-rose-300 hover:bg-rose-900/50">Delete</button>
+        </div>
       </div>
       <p class="text-xs text-slate-400 mt-3">Progress: ${completed}/${total} assigned concepts</p>
     `;
 
-    btn.addEventListener("click", () => {
+    card.addEventListener("click", () => {
       selectRoadmap(roadmap.roadmap_id);
     });
 
-    els.roadmapsList.appendChild(btn);
+    const deleteBtn = card.querySelector(".delete-roadmap-btn");
+    deleteBtn?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const confirmed = window.confirm(`Delete roadmap \"${getRoadmapName(roadmap)}\"? This cannot be undone.`);
+      if (!confirmed) return;
+
+      try {
+        await fetchJson(`/api/roadmaps/${roadmap.roadmap_id}`, { method: "DELETE" });
+        if (Number(roadmap.roadmap_id) === Number(activeRoadmapId)) {
+          activeRoadmapId = null;
+          activeRoadmapData = null;
+          completedConcepts = new Set();
+          clearOutputs();
+        }
+        await refreshRoadmapsListOnly();
+        const fallback = currentRoadmaps[0];
+        if (fallback && !activeRoadmapData) {
+          await selectRoadmap(fallback.roadmap_id);
+        }
+      } catch (err) {
+        setStatus(err?.message || "Failed to delete roadmap.", { error: true });
+      }
+    });
+
+    els.roadmapsList.appendChild(card);
   }
 }
 
@@ -1162,8 +1212,7 @@ async function submitAuth(mode) {
 
 async function restoreSession() {
   if (!authToken) {
-    updateAuthUi();
-    setAuthenticatedView(false);
+    window.location.replace("/index.html");
     return;
   }
 
@@ -1185,7 +1234,7 @@ async function restoreSession() {
   } catch (err) {
     clearSession();
     clearOutputs();
-    setAuthStatus("Session expired. Please sign in again.", { error: true });
+    window.location.replace("/index.html");
   }
 }
 
@@ -1197,11 +1246,17 @@ els.authLogoutBtn?.addEventListener("click", () => {
   clearSession();
   clearOutputs();
   setAuthStatus("Signed out.");
+  window.location.replace("/index.html");
+});
+
+els.sidebarToggleBtn?.addEventListener("click", () => {
+  setSidebarState(!isSidebarOpen);
 });
 
 els.form.addEventListener("submit", e => { e.preventDefault(); runInitialGenerate(); });
 els.generateSelectedBtn.addEventListener("click", () => runWithAccepted(getSelectedSuggestionIds()));
 els.skipContinueBtn.addEventListener("click", () => runWithAccepted([]));
 
+setSidebarState(true);
 restoreSession();
 setAuthMode("login");

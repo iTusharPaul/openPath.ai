@@ -233,6 +233,19 @@ async function updateRoadmapProgressForUser(userId, roadmapId, completedConceptI
   return mapRoadmapRow(result.rows[0]);
 }
 
+async function deleteRoadmapForUser(userId, roadmapId) {
+  const id = Number.parseInt(roadmapId, 10);
+  if (!Number.isFinite(id) || id <= 0) return false;
+
+  const result = await pool.query(
+    `DELETE FROM roadmaps
+     WHERE user_id = $1 AND id = $2`,
+    [userId, id]
+  );
+
+  return result.rowCount > 0;
+}
+
 async function generateRoadmap(userInput, options = {}) {
   const {
     concept_id,
@@ -476,5 +489,6 @@ module.exports = {
   getLatestRoadmapForUser,
   listRoadmapsForUser,
   getRoadmapForUser,
-  updateRoadmapProgressForUser
+  updateRoadmapProgressForUser,
+  deleteRoadmapForUser
 };

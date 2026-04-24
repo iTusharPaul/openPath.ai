@@ -6,7 +6,8 @@ const {
   getLatestRoadmapForUser,
   listRoadmapsForUser,
   getRoadmapForUser,
-  updateRoadmapProgressForUser
+  updateRoadmapProgressForUser,
+  deleteRoadmapForUser
 } = require("../services/roadmapGenerator");
 const { requireAuth } = require("../middleware/auth");
 
@@ -75,6 +76,19 @@ router.patch("/roadmaps/:id/progress", async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Failed to update progress" });
+  }
+});
+
+router.delete("/roadmaps/:id", async (req, res) => {
+  try {
+    const deleted = await deleteRoadmapForUser(req.user.id, req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: "Roadmap not found" });
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to delete roadmap" });
   }
 });
 
